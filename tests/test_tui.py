@@ -18,6 +18,8 @@ class FakeScreen:
         self.choices = iter(choices)
         self.dimensions = size
         self.window = SimpleNamespace(refresh=lambda: None)
+        self.accent = self.selection = 0
+        self.unicode = True
         self.errors = []
         self.writes = []
         self.titles = []

@@ -5,13 +5,23 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from uuid import uuid4
 
 from core import AGENTS, PLUGIN_ID, Store, UserError, Workspace, import_definition, make_repository, name_repositories, portable_definition
 from launcher import Herdr, Launcher
 
-VERSION = "0.2.5"
+
+
+def version():
+    """The single version number lives in the Herdr plugin manifest."""
+    try:
+        manifest = (Path(__file__).resolve().parent / "herdr-plugin.toml").read_text(encoding="utf-8")
+    except OSError:
+        return "unknown"
+    match = re.search(r'^version\s*=\s*"([^"]+)"', manifest, re.M)
+    return match.group(1) if match else "unknown"
 
 
 def find_workspace(store, name):
@@ -23,7 +33,7 @@ def find_workspace(store, name):
 
 def parser():
     result = argparse.ArgumentParser(description="Open an agent with a saved set of repositories in Herdr.")
-    result.add_argument("--version", action="version", version=VERSION)
+    result.add_argument("--version", action="version", version=version())
     commands = result.add_subparsers(dest="command")
     commands.add_parser("ui", help="Open the terminal workspace picker")
     commands.add_parser("open-picker", help="Open the picker as a Herdr overlay")

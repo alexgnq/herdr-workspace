@@ -253,8 +253,10 @@ class Store:
     def __init__(self, config_dir=None, state_dir=None):
         config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
         state_home = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
-        self.config_dir = Path(config_dir or os.environ.get("HERDR_PLUGIN_CONFIG_DIR") or config_home / "herdr" / "plugins" / "config" / PLUGIN_ID).expanduser()
-        self.state_dir = Path(state_dir or os.environ.get("HERDR_PLUGIN_STATE_DIR") or state_home / "herdr" / "plugins" / PLUGIN_ID).expanduser()
+        config_dir = config_dir or os.environ.get("HERDR_PLUGIN_CONFIG_DIR") or config_home / "herdr" / "plugins" / "config" / PLUGIN_ID
+        state_dir = state_dir or os.environ.get("HERDR_PLUGIN_STATE_DIR") or state_home / "herdr" / "plugins" / PLUGIN_ID
+        self.config_dir = Path(config_dir).expanduser()
+        self.state_dir = Path(state_dir).expanduser()
         self.path = self.config_dir / "workspaces.json"
 
     def load(self) -> list[Workspace]:
@@ -266,7 +268,8 @@ class Store:
             raise UserError(f"Cannot read saved workspaces: {error}") from error
         try:
             data = json.loads(raw)
-            if not isinstance(data, dict) or type(data.get("version")) is not int or data.get("version") != 1 or not isinstance(data.get("workspaces"), list):
+            if (not isinstance(data, dict) or type(data.get("version")) is not int or data.get("version") != 1
+                    or not isinstance(data.get("workspaces"), list)):
                 raise ValueError("unsupported file format")
             result = []
             ids = set()
@@ -305,7 +308,8 @@ class Store:
     def save(self, workspace: Workspace) -> None:
         _validate_workspace(workspace)
         # Persist only the credential-free remote identity.
-        clean = Workspace(workspace.id, workspace.name.strip(), [Repository(repo.path, repo.name, _remote(repo.remote)) for repo in workspace.repos], workspace.agent)
+        repos = [Repository(repo.path, repo.name, _remote(repo.remote)) for repo in workspace.repos]
+        clean = Workspace(workspace.id, workspace.name.strip(), repos, workspace.agent)
         with self._locked():
             workspaces = self.load()
             for index, saved in enumerate(workspaces):

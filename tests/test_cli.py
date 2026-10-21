@@ -13,6 +13,13 @@ from herdr_workspaces import main
 
 
 class CliTests(unittest.TestCase):
+    def test_version_comes_from_the_plugin_manifest(self):
+        manifest = (Path(__file__).parent.parent / "herdr-plugin.toml").read_text()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), self.assertRaises(SystemExit):
+            main(["--version"])
+        self.assertIn('version = "' + output.getvalue().strip() + '"', manifest)
+
     def test_same_name_repositories_can_be_created_and_shared_by_remote(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

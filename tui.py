@@ -30,12 +30,16 @@ def plain(value):
     return "".join(char if char.isprintable() else " " for char in str(value))
 
 
+def char_width(char):
+    return 0 if unicodedata.combining(char) else 2 if unicodedata.east_asian_width(char) in "WF" else 1
+
+
 def clipped(value, width):
     text = plain(value)
     result = []
     used = 0
     for char in text:
-        size = 0 if unicodedata.combining(char) else 2 if unicodedata.east_asian_width(char) in "WF" else 1
+        size = char_width(char)
         if used + size > max(0, width):
             break
         result.append(char)
@@ -50,7 +54,7 @@ def short_path(value):
 
 
 def display_width(value):
-    return sum(0 if unicodedata.combining(char) else 2 if unicodedata.east_asian_width(char) in "WF" else 1 for char in str(value))
+    return sum(char_width(char) for char in str(value))
 
 
 def selected_text(value, width):
@@ -236,7 +240,10 @@ class Screen:
             start = max(0, selected - count + 1)
             for index in range(start, min(len(options), start + count)):
                 text = ("> " if index == selected else "  ") + options[index]
-                self.write(5 + index - start, selected_text(text, self.size()[1] - 4) if index == selected else text, self.selection if index == selected else 0)
+                if index == selected:
+                    self.write(5 + index - start, selected_text(text, self.size()[1] - 4), self.selection)
+                else:
+                    self.write(5 + index - start, text)
             self.footer("Up/Down: move   Enter: select   Esc: back")
             key = self.key()
             if key in ("\x1b", "\x03"):
@@ -268,7 +275,8 @@ class Picker:
         width = width or screen.size()[1] - col - 2
         remaining = list(repositories)
         for index, repo in enumerate(repositories):
-            prefix = ("└─ " if index == len(repositories) - 1 else "├─ ") if getattr(screen, "unicode", True) else ("`- " if index == len(repositories) - 1 else "+- ")
+            last = index == len(repositories) - 1
+            prefix = ("└─ " if last else "├─ ") if screen.unicode else ("`- " if last else "+- ")
             heading = prefix + repo.name + "  [" + self.branch(repo) + "]"
             path_lines = wrapped_path(short_path(str(Path(repo.path).resolve())), width - 3) if paths else []
             needed = 1 + len(path_lines)
@@ -276,7 +284,7 @@ class Picker:
                 if row < end:
                     screen.write(row, "+ {} more · open Repositories to inspect".format(len(remaining)), curses.A_DIM, col=col)
                 return row
-            screen.write(row, clipped(heading, width), getattr(screen, "accent", curses.A_BOLD), col=col)
+            screen.write(row, clipped(heading, width), screen.accent, col=col)
             for offset, line in enumerate(path_lines):
                 screen.write(row + 1 + offset, "   " + line, curses.A_DIM, col=col)
             row += needed
@@ -317,11 +325,12 @@ class Picker:
                 if screen.key() in ("\x1b", "\x03"):
                     return None
                 continue
-            visible = sorted((repo for repo in candidates.values() if query.casefold() in (repo.name + " " + repo.path).casefold()), key=lambda repo: (repo.name.casefold(), repo.path))
+            matching = (repo for repo in candidates.values() if query.casefold() in (repo.name + " " + repo.path).casefold())
+            visible = sorted(matching, key=lambda repo: (repo.name.casefold(), repo.path))
             selected = min(selected, max(0, len(visible) - 1))
             screen.start(title, "{} selected · links to original checkouts".format(len(chosen)))
             height, width = screen.size()
-            screen.write(5, "Find repo > " + (query or "type a name or path"), curses.A_DIM if not query else getattr(screen, "accent", curses.A_BOLD))
+            screen.write(5, "Find repo > " + (query or "type a name or path"), curses.A_DIM if not query else screen.accent)
             count = max(1, (height - 12) // 2)
             start = max(0, selected - count + 1)
             for index in range(start, min(len(visible), start + count)):
@@ -329,7 +338,7 @@ class Picker:
                 row = 7 + (index - start) * 2
                 mark = "[x]" if repo.path in chosen else "[ ]"
                 text = "{} {}  [{}]".format(mark, repo.name, self.branch(repo))
-                screen.write(row, selected_text(text, width - 4) if index == selected else text, getattr(screen, "selection", curses.A_REVERSE) if index == selected else 0)
+                screen.write(row, selected_text(text, width - 4) if index == selected else text, screen.selection if index == selected else 0)
                 screen.write(row + 1, "    " + short_path(str(Path(repo.path).resolve())), curses.A_DIM)
             if not visible:
                 screen.write(7, "No matches. Ctrl+A adds a checkout folder.")
@@ -403,7 +412,8 @@ class Picker:
                 if screen.key() in ("\x1b", "\x03"):
                     return None
                 continue
-            screen.start(("Ready to open · " if review else "") + (workspace.name or "New workspace"), "Links to existing checkouts · files and branches are shared")
+            screen.start(("Ready to open · " if review else "") + (workspace.name or "New workspace"),
+                         "Links to existing checkouts · files and branches are shared")
             height, _ = screen.size()
             compact = height < 23
             fields = [
@@ -420,7 +430,10 @@ class Picker:
                 screen.write(rows[2] - 1, "Changes and branch switches are shared wherever this checkout is used.", curses.A_DIM)
             for index, text in enumerate(fields):
                 text = ("> " if index == selected else "  ") + text
-                screen.write(rows[index], selected_text(text, screen.size()[1] - 4) if index == selected else text, getattr(screen, "selection", curses.A_REVERSE) if index == selected else 0)
+                if index == selected:
+                    screen.write(rows[index], selected_text(text, screen.size()[1] - 4), screen.selection)
+                else:
+                    screen.write(rows[index], text)
             screen.footer("Tab/Up/Down: move   Enter: choose   Esc: back", error)
             key = screen.key()
             if key in ("\x1b", "\x03"):
@@ -478,7 +491,8 @@ class Picker:
 
     def export(self, workspace):
         slug = re.sub(r"[^a-z0-9]+", "-", workspace.name.lower()).strip("-") or "workspace"
-        destination = self.screen.prompt("Share " + workspace.name, str(Path.home() / (slug + ".herdr-workspace.json")), "Export repo names and Git remotes. Local paths stay private.")
+        destination = self.screen.prompt("Share " + workspace.name, str(Path.home() / (slug + ".herdr-workspace.json")),
+                                         "Export repo names and Git remotes. Local paths stay private.")
         if destination is None:
             return
         path = Path(destination).expanduser()
@@ -501,7 +515,8 @@ class Picker:
         except (OSError, ValueError) as exc:
             raise UserError("Could not read workspace file: " + str(exc)) from exc
         roots = default_roots()
-        base = self.screen.prompt("Where do you keep these repos?", roots[0] if roots else "~/code", "Repos are matched by their Git remote when available.")
+        base = self.screen.prompt("Where do you keep these repos?", roots[0] if roots else "~/code",
+                                  "Repos are matched by their Git remote when available.")
         if base is None:
             return None
         workspace = import_definition(data, base)
@@ -529,19 +544,22 @@ class Picker:
             start = max(0, selected - count + 1)
             for index in range(start, min(len(options), start + count)):
                 text = ("> " if index == selected else "  ") + options[index]
-                screen.write(5 + index - start, selected_text(text, left_width) if index == selected else clipped(text, left_width), getattr(screen, "selection", curses.A_REVERSE) if index == selected else 0)
+                if index == selected:
+                    screen.write(5 + index - start, selected_text(text, left_width), screen.selection)
+                else:
+                    screen.write(5 + index - start, clipped(text, left_width))
             if selected < len(workspaces):
                 if split:
                     divider = left_width + 3
                     for row in range(5, height - 5):
-                        screen.write(row, "│" if getattr(screen, "unicode", True) else "|", curses.A_DIM, col=divider)
+                        screen.write(row, "│" if screen.unicode else "|", curses.A_DIM, col=divider)
                     column = divider + 3
-                    screen.write(5, workspaces[selected].name, getattr(screen, "accent", curses.A_BOLD), col=column)
+                    screen.write(5, workspaces[selected].name, screen.accent, col=column)
                     screen.write(6, "Existing checkouts", curses.A_DIM, col=column)
                     self.tree(workspaces[selected].repos, 8, height - 5, col=column)
                 elif height >= 22:
                     row = 6 + min(len(options), count)
-                    screen.write(row, "Existing checkout links", getattr(screen, "accent", curses.A_BOLD))
+                    screen.write(row, "Existing checkout links", screen.accent)
                     self.tree(workspaces[selected].repos, row + 1, height - 5)
             screen.footer("Enter:open a:+agent r:edit n:new e:share i:import d:remove q:quit", self.message)
             key = screen.key()
