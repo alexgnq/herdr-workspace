@@ -180,6 +180,17 @@ def _previous_notes(store: Store, workspace_id: str, root: Path) -> Optional[str
     return None
 
 
+def _remove_generated(root: Path) -> bool:
+    """Remove a folder made only of repo links and generated files; never follow a link."""
+    entries = list(root.iterdir())
+    if any(not entry.is_symlink() and entry.name not in ("AGENTS.md", "workspace.json") for entry in entries):
+        return False
+    for entry in entries:
+        entry.unlink()
+    root.rmdir()
+    return True
+
+
 class Launcher:
     def __init__(self, store: Store, herdr: Optional[Herdr] = None,
                  which: Callable = shutil.which):
@@ -206,6 +217,10 @@ class Launcher:
         workspaces = self.herdr.call("workspace", "list").get("workspaces", [])
         panes = self.herdr.call("pane", "list").get("panes", [])
         workspace_id = self._find_space(workspace, root, workspaces, panes)
+        try:
+            self._remove_unused_roots(panes, keep=root)
+        except OSError:
+            pass  # Leftover folders are harmless; never block opening over them.
         record = self._registry().get(root.name, {})
         matches = [pane for pane in panes if pane.get("workspace_id") == workspace_id
                    and pane.get("terminal_id") in record.get("terminals", [])] if workspace_id else []
@@ -272,6 +287,44 @@ class Launcher:
         if failures:
             raise UserError("Refreshed " + str(count) + " workspace(s). Could not refresh " + "; ".join(failures))
         return count
+
+    def _remove_unused_roots(self, panes, keep):
+        """Delete folders of earlier repo sets once nothing uses them.
+
+        Runs only when opening, when Herdr's pane list is complete. Only folders of
+        saved workspaces are considered. A folder is kept while a pane uses it, while
+        it holds notes its workspace's current folder lacks, or when it contains
+        anything this plugin did not create.
+        """
+        current = {saved.id: workspace_directory(self.store, saved) for saved in self.store.load()}
+        registry = self._registry()
+        live = {pane.get("terminal_id") for pane in panes if pane.get("terminal_id")}
+        removed = []
+        for summary in (self.store.state_dir / "roots").glob("*/workspace.json"):
+            root = summary.parent
+            try:
+                data = json.loads(summary.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            owner = data.get("workspace_id") if isinstance(data, dict) else None
+            if root.is_symlink() or root == keep or owner not in current or root == current[owner]:
+                continue
+            record = registry.get(root.name)
+            if isinstance(record, dict) and live & set(record.get("terminals", [])):
+                continue
+            if any(self._same_directory(pane.get("cwd"), root) for pane in panes):
+                continue
+            notes = (_notes(root / "AGENTS.md") or "").strip()
+            if notes and notes not in (_notes(current[owner] / "AGENTS.md") or ""):
+                continue
+            if _remove_generated(root):
+                removed.append(root.name)
+        if removed:
+            with exclusive(self.store.state_dir / ".runtime.lock"):
+                data = self._registry()
+                for name in removed:
+                    data.pop(name, None)
+                atomic_write(self._registry_path(), json.dumps(data))
 
     def _publish(self, workspace_id, workspace):
         from sidebar import publish_workspace

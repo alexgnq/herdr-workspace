@@ -260,6 +260,61 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(metadata[2], "w7")
         self.assertTrue(any("another" in argument for argument in metadata))
 
+    def change_repos_after_opening(self):
+        self.store.save(self.workspace)
+        self.launcher.open(self.workspace)
+        old_root = workspace_directory(self.store, self.workspace)
+        self.add_repository("another")
+        self.store.save(self.workspace)
+        self.backend.workspaces = [{"workspace_id": "w7", "label": "Platform"}]
+        return old_root
+
+    def test_unused_folder_of_an_earlier_repo_set_is_removed_on_open(self):
+        old_root = self.change_repos_after_opening()
+        self.launcher.open(self.workspace)
+        self.assertFalse(old_root.exists())
+        self.assertTrue(self.repo.is_dir())
+        self.assertNotIn(old_root.name, self.launcher._registry())
+        self.assertTrue(workspace_directory(self.store, self.workspace).is_dir())
+
+    def test_folder_used_by_a_running_agent_is_kept(self):
+        old_root = self.change_repos_after_opening()
+        self.backend.panes = [{"workspace_id": "w7", "pane_id": "w7:p1", "terminal_id": "terminal-first", "cwd": str(self.repo), "agent": "codex"}]
+        self.launcher.open(self.workspace)
+        self.assertTrue((old_root / "AGENTS.md").exists())
+
+    def test_folder_with_notes_missing_from_the_current_folder_is_kept(self):
+        old_root = self.change_repos_after_opening()
+        self.launcher.open(self.workspace)
+        another = self.add_repository("third")
+        self.store.save(self.workspace)
+        second_root = workspace_directory(self.store, Workspace(
+            self.workspace.id, self.workspace.name, [r for r in self.workspace.repos if r.path != str(another)]))
+        agents = second_root / "AGENTS.md"
+        agents.write_text(agents.read_text() + "Written after the repo change.\n")
+        self.launcher.open(self.workspace)
+        self.assertFalse(old_root.exists())
+        self.assertFalse(second_root.exists())
+        self.assertIn("Written after the repo change.", (workspace_directory(self.store, self.workspace) / "AGENTS.md").read_text())
+
+    def test_notes_written_by_an_old_agent_after_a_repo_change_keep_its_folder(self):
+        old_root = self.change_repos_after_opening()
+        self.backend.panes = [{"workspace_id": "w7", "pane_id": "w7:p1", "terminal_id": "terminal-first", "cwd": str(old_root), "agent": "codex"}]
+        self.launcher.open(self.workspace)
+        agents = old_root / "AGENTS.md"
+        agents.write_text(agents.read_text() + "Only in the old folder.\n")
+        self.backend.panes = []
+        self.launcher.open(self.workspace)
+        self.assertIn("Only in the old folder.", agents.read_text())
+
+    def test_folder_with_unknown_files_is_left_untouched(self):
+        old_root = self.change_repos_after_opening()
+        (old_root / "scratch.txt").write_text("agent output")
+        self.launcher.open(self.workspace)
+        self.assertEqual((old_root / "scratch.txt").read_text(), "agent output")
+        self.assertTrue((old_root / "AGENTS.md").exists())
+        self.assertTrue(any(path.is_symlink() for path in old_root.iterdir()))
+
     def test_closed_space_after_a_repo_change_creates_one_new_space(self):
         self.launcher.open(self.workspace)
         self.add_repository("another")

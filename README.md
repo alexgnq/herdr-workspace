@@ -87,7 +87,12 @@ Use **Add folder** for other locations. Git worktrees are supported.
 Opening an existing workspace focuses an agent of the chosen kind when one exists. **New agent**
 creates another tab. Each saved workspace keeps one Herdr space. After you change its repos, opening
 it adds a tab with the new repo set to that space. Agents already running keep the repos and
-instructions they started with, and are not reused for the new set.
+instructions they started with, and are not reused for the new set. Once no pane uses an earlier
+repo set's folder, opening the workspace removes it. A folder is kept while it holds notes the current
+folder lacks or files the extension did not create.
+
+You can run different agents side by side in one workspace, for example Claude Code and Pi: open the
+workspace with each, or press `a` to add another. They share the same checkouts, branches and notes.
 
 ## Share with your team
 
