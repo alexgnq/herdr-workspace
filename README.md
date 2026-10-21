@@ -72,7 +72,7 @@ Use **Add folder** for other locations. Git worktrees are supported.
 
 Each saved workspace keeps one Herdr space. Opening it focuses an existing agent of the chosen kind
 or starts a new one. The last chosen agent is preselected next time. Press `a` to start another session.
-All sessions in a workspace share the same checkouts, branches and notes.
+Sessions opened with the same repository set share checkouts, branches and notes.
 
 Changing a workspace's repositories affects new sessions. Running agents keep the repository set
 and instructions they started with. Once no pane in any Herdr session uses an earlier repository
@@ -165,6 +165,7 @@ is rejected on open rather than used silently.
 
 The picker can also run with `python3 herdr_workspaces.py ui`. Configuration and sharing work outside
 Herdr; launching agents requires a Herdr pane. Run `--help` for the command-line equivalents.
+The following commands run from a source checkout:
 
 ```sh
 python3 herdr_workspaces.py create Platform ~/code/service-a ~/code/service-b --agent codex
