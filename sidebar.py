@@ -8,10 +8,10 @@ import re
 import stat
 import tempfile
 
-from core import UserError
+from core import PLUGIN_ID, UserError
 
 
-SOURCE = "herdr-multirepo"
+SOURCE = PLUGIN_ID
 MAX_REPOSITORIES = 8
 MAX_LAYOUT_ROWS = 16
 DEFAULT_ROWS = [["state_icon", "workspace"], ["branch", "git_status"]]
@@ -198,7 +198,7 @@ def install_sidebar(config_path: Path) -> bool:
             return False
         path.parent.mkdir(parents=True, exist_ok=True)
         mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else 0o600
-        backup = path.with_name(path.name + ".before-herdr-multirepo")
+        backup = path.with_name(path.name + ".before-herdr-workspaces")
         if path.exists() and not backup.exists():
             with backup.open("x", encoding="utf-8") as stream:
                 stream.write(original)

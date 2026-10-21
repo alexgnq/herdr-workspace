@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Saved multi-repository workspaces for Herdr."""
+"""Herdr Workspaces: saved repository sets for agents in Herdr."""
 
 import argparse
 import json

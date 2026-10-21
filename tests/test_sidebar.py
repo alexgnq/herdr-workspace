@@ -26,7 +26,7 @@ class SidebarTests(unittest.TestCase):
         herdr = Mock()
         publish_workspace(herdr, "w7", self.workspace(1))
         args = herdr.call.call_args.args
-        self.assertEqual(args[:5], ("workspace", "report-metadata", "w7", "--source", "herdr-multirepo"))
+        self.assertEqual(args[:5], ("workspace", "report-metadata", "w7", "--source", "herdr-workspaces"))
         self.assertIn("mr_repo1=└─ repo0", args)
         self.assertIn("mr_repo8", args)
         self.assertIn("mr_more", args)
@@ -47,7 +47,7 @@ class SidebarTests(unittest.TestCase):
             path.write_text(original)
             self.assertTrue(install_sidebar(path))
             self.assertTrue(path.read_text().startswith(original.rstrip()))
-            backup = path.with_name("config.toml.before-herdr-multirepo")
+            backup = path.with_name("config.toml.before-herdr-workspaces")
             self.assertEqual(backup.read_text(), original)
             self.assertFalse(install_sidebar(path))
             self.assertEqual(backup.read_text(), original)
@@ -91,7 +91,7 @@ enabled = false
             with self.assertRaisesRegex(UserError, "16 rows"):
                 install_sidebar(path)
             self.assertEqual(path.read_text(), original)
-            self.assertFalse(path.with_name("config.toml.before-herdr-multirepo").exists())
+            self.assertFalse(path.with_name("config.toml.before-herdr-workspaces").exists())
 
     def test_incomplete_rows_leave_config_unchanged(self):
         with tempfile.TemporaryDirectory() as directory:

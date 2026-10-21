@@ -1,2 +1,2 @@
 #!/bin/sh
-exec "${HERDR_BIN_PATH:-herdr}" plugin action invoke open --plugin herdr-multirepo
+exec "${HERDR_BIN_PATH:-herdr}" plugin action invoke open --plugin herdr-workspaces

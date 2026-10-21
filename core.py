@@ -18,7 +18,7 @@ from urllib.parse import urlsplit, urlunsplit
 from agents import AGENTS, UNSUPPORTED
 
 
-PLUGIN_ID = "herdr-multirepo"
+PLUGIN_ID = "herdr-workspaces"
 
 
 class UserError(Exception):

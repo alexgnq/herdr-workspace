@@ -20,19 +20,19 @@ herdr plugin install alexgnq/herdr-workspaces
 To update a GitHub installation:
 
 ```sh
-herdr plugin update herdr-multirepo
+herdr plugin update herdr-workspaces
 ```
 
 Then run this **inside a Herdr pane**:
 
 ```sh
-herdr plugin action invoke open --plugin herdr-multirepo
+herdr plugin action invoke open --plugin herdr-workspaces
 ```
 
 For a short command, add this to your shell configuration:
 
 ```sh
-alias herdrws='herdr plugin action invoke open --plugin herdr-multirepo'
+alias herdrws='herdr plugin action invoke open --plugin herdr-workspaces'
 ```
 
 The source also includes `bin/herdrws`, which you can copy to a directory on your PATH.
@@ -43,8 +43,8 @@ For a keybinding, add this to your Herdr `config.toml` and reload its configurat
 [[keys.command]]
 key = "prefix+shift+o"
 type = "plugin_action"
-command = "herdr-multirepo.open"
-description = "Open multi-repo workspace"
+command = "herdr-workspaces.open"
+description = "Open Herdr Workspaces"
 ```
 
 With the default prefix, press Ctrl+B, then Shift+O. Choose a different binding if that one is in use.
@@ -52,7 +52,7 @@ With the default prefix, press Ctrl+B, then Shift+O. Choose a different binding 
 To show the repos beneath each workspace in Herdr's **Spaces** sidebar, run this once inside Herdr:
 
 ```sh
-herdr plugin action invoke setup-sidebar --plugin herdr-multirepo
+herdr plugin action invoke setup-sidebar --plugin herdr-workspaces
 ```
 
 ```text
@@ -63,7 +63,7 @@ Platform
 ```
 
 This preserves your theme and existing sidebar rows, saves a config backup with the suffix
-`.before-herdr-multirepo`, and reloads the sidebar configuration. Repo labels refresh when the workspace
+`.before-herdr-workspaces`, and reloads the sidebar configuration. Repo labels refresh when the workspace
 opens and when Herdr restarts. Other spaces retain their usual rows. Up to eight repos are shown,
 followed by a count when there are more.
 
@@ -97,7 +97,7 @@ workspace with each, or press `a` to add another. They share the same checkouts,
 ## Share with your team
 
 Share this source folder or the release ZIP. Each teammate extracts it somewhere permanent, runs
-`herdr plugin link /path/to/herdr-multirepo --enabled`, and uses the same action or shortcut.
+`herdr plugin link /path/to/herdr-workspaces --enabled`, and uses the same action or shortcut.
 There is no build or package installation step.
 
 Teammates can also install directly from GitHub:
@@ -124,7 +124,7 @@ Before working in a repo, the generated instructions tell the agent to read that
 Repo-local agent settings are not merged into a single workspace configuration. Each repo retains its
 own Git checkout and history. The extension does not create branches, worktrees or commits.
 
-The folders under `~/.local/state/herdr/plugins/herdr-multirepo/roots/` contain **symlinks to the selected
+The folders under `~/.local/state/herdr/plugins/herdr-workspaces/roots/` contain **symlinks to the selected
 checkouts**, not local copies. `workspace.json` records the exact target of each link. A small
 `AGENTS.md` describes the repo set to agents; `CLAUDE.md` links to it. The hash identifies a repo set and
 stays stable while its selected checkout paths stay the same.
