@@ -2,7 +2,7 @@
 
 Open your coding agent across several repos in one Herdr workspace.
 
-Codex, Claude Code, Copilot and Pi. macOS and Linux. Python 3.9+ and Herdr 0.9.1+.
+Codex, Claude Code, Copilot and Pi. macOS and Linux. Python 3.11+ and Herdr 0.9.1+.
 
 [Get started](#get-started) · [Shortcuts](#shortcuts-and-sidebar) · [Share with your team](#share-with-your-team)
 
@@ -20,6 +20,7 @@ Python's standard library is the only runtime dependency. There is no build step
 ## Get started
 
 You'll need Git and one of the supported agent CLIs alongside Herdr and Python.
+Use the latest patch release of a supported Python version.
 Sign in to the agent once using its normal command, then install the plugin:
 
 ```sh
