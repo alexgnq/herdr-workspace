@@ -15,8 +15,9 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import urlsplit, urlunsplit
 
+from agents import AGENTS, UNSUPPORTED
 
-AGENTS = {"codex": "Codex", "claude": "Claude Code", "copilot": "Copilot"}
+
 PLUGIN_ID = "herdr-multirepo"
 
 
@@ -230,7 +231,7 @@ def _validate_workspace(workspace: Workspace) -> None:
         raise UserError("Invalid workspace ID.")
     _text(workspace.name, "Workspace name", 120)
     if workspace.agent not in AGENTS:
-        raise UserError("Choose Codex, Claude Code or Copilot.")
+        raise UserError(UNSUPPORTED)
     if not isinstance(workspace.repos, list) or not workspace.repos or len(workspace.repos) > 100:
         raise UserError("Choose between 1 and 100 repositories.")
     seen_paths, seen_names = set(), set()

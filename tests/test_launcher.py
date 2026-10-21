@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import Repository, Store, UserError, Workspace, make_repository, name_repositories
+from core import AGENTS, Repository, Store, UserError, Workspace, make_repository, name_repositories
 from launcher import Herdr, Launcher, agent_arguments, prepare_directory, workspace_directory
 
 
@@ -71,6 +71,27 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(args.count("--add-dir"), 2)
             self.assertIn(str(self.repo), args)
             self.assertIn(other.path, args)
+
+    def test_agents_without_folder_limits_get_no_directory_flags(self):
+        self.assertEqual(agent_arguments("pi", self.workspace.repos), [])
+
+    def test_agent_specific_environment_is_set_only_for_that_agent(self):
+        for kind, expected in (("claude", True), ("codex", False), ("pi", False)):
+            with self.subTest(agent=kind):
+                self.backend.calls.clear()
+                self.workspace.agent = kind
+                self.launcher.open(self.workspace, new_agent=True)
+                created = next(call for call in self.backend.calls if call[1] == "create")
+                self.assertEqual("CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1" in created, expected)
+                start = next(call for call in self.backend.calls if call[:2] == ("agent", "start"))
+                self.assertEqual(start[start.index("--kind") + 1], kind)
+
+    def test_every_agent_kind_is_supported_by_herdr(self):
+        # Herdr 0.9.5 `agent start --kind` values; an adapter for anything else cannot launch.
+        herdr_kinds = {"pi", "claude", "codex", "gemini", "cursor", "devin", "agy", "cline", "omp",
+                       "mastracode", "opencode", "copilot", "kimi", "kiro", "droid", "amp", "grok",
+                       "hermes", "kilo", "qodercli", "qwen", "letta", "maki", "muse"}
+        self.assertLessEqual(set(AGENTS), herdr_kinds)
 
     def test_reuses_existing_agent_after_its_directory_changes(self):
         self.launcher.open(self.workspace)

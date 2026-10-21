@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 from uuid import uuid4
 
-from core import AGENTS, Repository, Store, UserError, Workspace, atomic_write, exclusive, make_repository
+from agents import ADAPTERS, AGENTS, UNSUPPORTED
+from core import Repository, Store, UserError, Workspace, atomic_write, exclusive, make_repository
 
 
 # Generated files and their names are reserved; compare case-insensitively for macOS.
@@ -61,11 +62,13 @@ class Herdr:
 
 
 def agent_arguments(kind: str, repositories: list[Repository]) -> list[str]:
-    if kind not in AGENTS:
-        raise UserError("Choose Codex, Claude Code or Copilot.")
-    args = ["--sandbox", "workspace-write"] if kind == "codex" else []
-    for repo in repositories:
-        args.extend(["--add-dir", str(Path(repo.path).resolve())])
+    if kind not in ADAPTERS:
+        raise UserError(UNSUPPORTED)
+    agent = ADAPTERS[kind]
+    args = list(agent.arguments)
+    if agent.directory_flag:
+        for repo in repositories:
+            args.extend([agent.directory_flag, str(Path(repo.path).resolve())])
     return args
 
 
@@ -205,7 +208,7 @@ class Launcher:
                 self._publish(existing["workspace_id"], checked)
                 self.herdr.call("agent", "focus", existing["pane_id"])
                 return LaunchResult("Opened " + workspace.name + ".", existing["workspace_id"])
-        environment = ["--env", "CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1"]
+        environment = [item for value in ADAPTERS[workspace.agent].environment for item in ("--env", value)]
         if workspace_id:
             created = self.herdr.call(
                 "tab", "create", "--workspace", workspace_id, "--cwd", str(root),

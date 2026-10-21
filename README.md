@@ -1,6 +1,6 @@
 # Herdr Workspaces
 
-Pick repositories, choose Codex, Claude Code or Copilot, and open an agent with access to all of them.
+Pick repositories, choose an agent, and open it with access to all of them.
 Save the repo set as a workspace and reuse it for your next agent.
 
 The picker runs in a Herdr terminal overlay. Python's standard library is the only runtime dependency.
@@ -9,7 +9,8 @@ The terminal UI uses your terminal's colours with a cyan accent and supports sma
 
 ## Install
 
-Requires macOS or Linux, Herdr 0.9.1+, Python 3.9+, Git, and an installed agent CLI.
+Requires macOS or Linux, Herdr 0.9.1+, Python 3.9+, Git, and a supported agent CLI:
+Codex, Claude Code, Copilot or Pi.
 Sign in to the agent once using its normal command before launching it here.
 
 ```sh
@@ -72,7 +73,7 @@ followed by a count when there are more.
 - `Tab` or arrows move between fields. `Enter` edits a field or activates the selected action.
 - In the repo picker, type to filter, use arrows to move, `Space` to select and `Enter` to finish.
   `Ctrl+A` adds a checkout folder. Paths and current branches distinguish different checkouts.
-- `Enter` on a saved workspace lets you choose Codex, Claude Code or Copilot. It focuses a running
+- `Enter` on a saved workspace lets you choose an agent. It focuses a running
   agent of that kind, or starts one in the same space. The last chosen agent is preselected next time.
 - `a` chooses an agent and always starts another session in that workspace. `r` edits its name or repos.
 - `e` exports the selected workspace. `i` imports a shared file. `Esc` goes back; `q` closes the picker.
@@ -107,7 +108,9 @@ or ambiguous repos produce an error so the teammate can choose the correct folde
 ## Directory access
 
 Each agent starts in a generated workspace directory containing repo links and a short repo index.
-The extension passes every selected checkout using `--add-dir`. Codex uses `workspace-write` sandboxing.
+Agents that limit file access to their folder receive every selected checkout in the form they accept:
+`--add-dir` for Codex, Claude Code and Copilot, with Codex in `workspace-write` sandboxing. Pi has no
+folder limit and needs nothing extra. `agents.py` holds this per-agent detail; adding an agent is one entry.
 Agents retain their normal command approval rules and global settings. This removes the extra directory
 boundary for the chosen repos; it does not disable command, network or first-run trust prompts.
 
