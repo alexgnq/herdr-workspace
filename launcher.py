@@ -150,7 +150,9 @@ class Launcher:
         workspaces = self.herdr.call("workspace", "list").get("workspaces", [])
         panes = self.herdr.call("pane", "list").get("panes", [])
         workspace_id = self._existing_workspace(root, workspaces, panes, workspace.name)
-        matches = [pane for pane in panes if pane.get("workspace_id") == workspace_id] if workspace_id else []
+        record = self._registry().get(root.name, {})
+        matches = [pane for pane in panes if pane.get("workspace_id") == workspace_id
+                   and pane.get("terminal_id") in record.get("terminals", [])] if workspace_id else []
         if matches and not new_agent:
             existing = next((p for p in matches if p.get("agent") == workspace.agent), None)
             if existing:
@@ -232,6 +234,7 @@ class Launcher:
             terminals = record.get("terminals", [])
             pane_ids = record.get("panes", [])
             if match:
+                found = False
                 for pane in panes:
                     if pane.get("workspace_id") != match["workspace_id"]:
                         continue
@@ -240,22 +243,27 @@ class Launcher:
                         # Herdr preserves public pane IDs on restore but allocates new
                         # terminal IDs. Rebind only in its startup hook, before normal use.
                         self._remember(root, match["workspace_id"], match.get("label", label), pane.get("terminal_id"), pane.get("pane_id"))
-                        return match["workspace_id"]
+                        found = True
+                if found:
+                    return match["workspace_id"]
         for pane in panes:
             if self._same_directory(pane.get("cwd"), root):
                 live_label = next((w.get("label", label) for w in workspaces if w.get("workspace_id") == pane["workspace_id"]), label)
-                self._remember(root, pane["workspace_id"], live_label, pane.get("terminal_id"), pane.get("pane_id"))
+                # The directory identifies the space, but a manually started agent
+                # there may not have received this workspace's directory permissions.
+                self._remember(root, pane["workspace_id"], live_label)
                 return pane["workspace_id"]
         return None
 
     def _remember(self, root, workspace_id, label, terminal_id=None, pane_id=None):
         data = self._registry()
         prior = data.get(root.name, {})
-        terminals = prior.get("terminals", []) if isinstance(prior, dict) and prior.get("id") == workspace_id else []
+        keep_sessions = isinstance(prior, dict) and prior.get("id") == workspace_id and (terminal_id or pane_id)
+        terminals = prior.get("terminals", []) if keep_sessions else []
         terminals = [item for item in terminals if isinstance(item, str)] if isinstance(terminals, list) else []
         if terminal_id and terminal_id not in terminals:
             terminals.append(terminal_id)
-        pane_ids = prior.get("panes", []) if isinstance(prior, dict) and prior.get("id") == workspace_id else []
+        pane_ids = prior.get("panes", []) if keep_sessions else []
         pane_ids = [item for item in pane_ids if isinstance(item, str)] if isinstance(pane_ids, list) else []
         if pane_id and pane_id not in pane_ids:
             pane_ids.append(pane_id)

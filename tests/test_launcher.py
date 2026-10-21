@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from core import Repository, Store, UserError, Workspace, make_repository
+from core import Repository, Store, UserError, Workspace, make_repository, name_repositories
 from launcher import Herdr, Launcher, agent_arguments, prepare_directory, workspace_directory
 
 
@@ -79,6 +79,49 @@ class LauncherTests(unittest.TestCase):
         self.backend.panes = [{"workspace_id": "w7", "pane_id": "w7:p1", "terminal_id": "terminal-first", "cwd": str(self.repo), "agent": "codex"}]
         self.launcher.open(self.workspace)
         self.assertEqual(self.backend.calls[-1], ("agent", "focus", "w7:p1"))
+        self.assertFalse(any(call[1] in ("create", "start") for call in self.backend.calls))
+
+    def test_reuses_owned_agent_instead_of_a_manual_agent_of_the_same_kind(self):
+        self.launcher.open(self.workspace)
+        self.backend.workspaces = [{"workspace_id": "w7", "label": "Platform"}]
+        self.backend.panes = [
+            {"workspace_id": "w7", "pane_id": "w7:manual", "terminal_id": "manual-terminal", "cwd": str(self.root), "agent": "codex"},
+            {"workspace_id": "w7", "pane_id": "w7:p1", "terminal_id": "terminal-first", "cwd": str(self.repo), "agent": "codex"},
+        ]
+        self.backend.calls.clear()
+        self.launcher.open(self.workspace)
+        self.assertEqual(self.backend.calls[-1], ("agent", "focus", "w7:p1"))
+        self.assertFalse(any(call[1] in ("create", "start") for call in self.backend.calls))
+
+    def test_agent_in_generated_directory_is_not_assumed_to_have_workspace_permissions(self):
+        root = prepare_directory(self.store, self.workspace)
+        self.backend.workspaces = [{"workspace_id": "w7", "label": "Platform"}]
+        self.backend.panes = [
+            {"workspace_id": "w7", "pane_id": "w7:manual", "terminal_id": "manual-terminal", "cwd": str(root), "agent": "codex"},
+        ]
+        self.launcher.open(self.workspace)
+        self.assertTrue(any(call[:2] == ("tab", "create") for call in self.backend.calls))
+        self.assertEqual(self.backend.calls[-1], ("agent", "focus", "w7:p2"))
+
+    def test_reset_server_does_not_reuse_manual_agent_with_stale_pane_id_and_root_cwd(self):
+        self.store.save(self.workspace)
+        self.launcher.open(self.workspace)
+        root = workspace_directory(self.store, self.workspace)
+        self.backend.workspaces = [{"workspace_id": "w7", "label": "Platform"}]
+        self.backend.panes = [
+            {"workspace_id": "w7", "pane_id": "w7:p1", "terminal_id": "manual-terminal", "cwd": str(root), "agent": "codex"},
+        ]
+        self.backend.calls.clear()
+        self.launcher.open(self.workspace)
+        self.assertTrue(any(call[:2] == ("tab", "create") for call in self.backend.calls))
+        self.assertEqual(self.backend.calls[-1], ("agent", "focus", "w7:p2"))
+        self.backend.panes[0]["terminal_id"] = "restored-manual"
+        self.backend.panes.append({"workspace_id": "w7", "pane_id": "w7:p2", "terminal_id": "restored-owned", "cwd": str(self.repo), "agent": "codex"})
+        with patch.dict(os.environ, {"HERDR_PLUGIN_EVENT": "startup"}):
+            self.assertEqual(self.launcher.refresh(), 1)
+        self.backend.calls.clear()
+        self.launcher.open(self.workspace)
+        self.assertEqual(self.backend.calls[-1], ("agent", "focus", "w7:p2"))
         self.assertFalse(any(call[1] in ("create", "start") for call in self.backend.calls))
 
     def test_new_agent_uses_a_new_tab_and_same_repo_set(self):
@@ -154,6 +197,19 @@ class LauncherTests(unittest.TestCase):
         self.workspace.repos.reverse()
         self.assertEqual(root, prepare_directory(self.store, self.workspace))
         self.assertEqual(target, (root / "a-b").resolve())
+
+    def test_reselecting_saved_checkouts_preserves_aliases_and_generated_directory(self):
+        other = self.root / "api"
+        other.mkdir()
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        self.workspace.repos = [Repository(str(self.repo), "primary-api"), make_repository(other)]
+        original = list(self.workspace.repos)
+        root = prepare_directory(self.store, self.workspace)
+        discovered = [make_repository(repo.path) for repo in reversed(original)]
+        self.workspace.repos = name_repositories(discovered, original)
+        self.assertEqual(prepare_directory(self.store, self.workspace), root)
+        self.assertEqual((root / "primary-api").resolve(), self.repo)
+        self.assertEqual((root / "api").resolve(), other)
 
     def test_startup_prompt_keeps_agent_visible_without_retrying(self):
         self.backend.start_error = "Herdr: agent_not_ready: confirm workspace trust"
@@ -245,6 +301,23 @@ class LauncherTests(unittest.TestCase):
         self.backend.calls.clear()
         self.launcher.open(self.workspace)
         self.assertEqual(self.backend.calls[-1], ("agent", "focus", "w7:p1"))
+        self.assertFalse(any(call[1] in ("create", "start") for call in self.backend.calls))
+
+    def test_startup_restores_ownership_for_every_agent_in_a_space(self):
+        self.launcher.open(self.workspace)
+        self.backend.workspaces = [{"workspace_id": "w7", "label": "Platform"}]
+        self.backend.panes = [{"workspace_id": "w7", "pane_id": "w7:p1", "terminal_id": "terminal-first", "cwd": str(self.repo), "agent": "codex"}]
+        self.workspace.agent = "claude"
+        self.launcher.open(self.workspace)
+        self.store.save(self.workspace)
+        self.backend.panes[0]["terminal_id"] = "restored-first"
+        self.backend.panes.append({"workspace_id": "w7", "pane_id": "w7:p2", "terminal_id": "restored-second", "cwd": str(self.repo), "agent": "claude"})
+        self.backend.panes.insert(0, {"workspace_id": "w7", "pane_id": "w7:manual", "terminal_id": "manual-terminal", "cwd": str(self.root), "agent": "claude"})
+        with patch.dict(os.environ, {"HERDR_PLUGIN_EVENT": "startup"}):
+            self.assertEqual(self.launcher.refresh(), 1)
+        self.backend.calls.clear()
+        self.launcher.open(self.workspace)
+        self.assertEqual(self.backend.calls[-1], ("agent", "focus", "w7:p2"))
         self.assertFalse(any(call[1] in ("create", "start") for call in self.backend.calls))
 
     def test_renaming_a_space_keeps_its_checkout_identity_after_refresh_and_restart(self):

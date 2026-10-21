@@ -8,10 +8,10 @@ from pathlib import Path
 import sys
 from uuid import uuid4
 
-from core import AGENTS, PLUGIN_ID, Store, UserError, Workspace, import_definition, make_repository, portable_definition
+from core import AGENTS, PLUGIN_ID, Store, UserError, Workspace, import_definition, make_repository, name_repositories, portable_definition
 from launcher import Herdr, Launcher
 
-VERSION = "0.2.2"
+VERSION = "0.2.3"
 
 
 def find_workspace(store, name):
@@ -88,7 +88,7 @@ def main(argv=None):
         elif command == "create":
             if any(item.name == arguments.name for item in store.load()):
                 raise UserError("That workspace name already exists. Edit it in the picker.")
-            item = Workspace(uuid4().hex, arguments.name, [make_repository(p) for p in arguments.repos], arguments.agent)
+            item = Workspace(uuid4().hex, arguments.name, name_repositories([make_repository(p) for p in arguments.repos]), arguments.agent)
             store.save(item)
             print("Saved " + item.name + ".")
         elif command == "open":

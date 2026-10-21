@@ -20,6 +20,7 @@ from core import (
     discover_repositories,
     import_definition,
     make_repository,
+    name_repositories,
     portable_definition,
 )
 
@@ -363,7 +364,7 @@ class Picker:
                         error = str(exc)
             elif key in ("\n", "\r", curses.KEY_ENTER):
                 if chosen:
-                    return list(chosen.values())
+                    return name_repositories(list(chosen.values()), initial)
                 error = "Choose at least one repository."
             elif isinstance(key, str) and key.isprintable() and len(query) < 200:
                 query += key

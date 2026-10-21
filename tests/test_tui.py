@@ -1,4 +1,8 @@
 import curses
+import os
+from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -222,6 +226,24 @@ class PickerTests(unittest.TestCase):
         self.assertIn("/tmp/experiment/service", rendered)
         self.assertIn("[main]", rendered)
         self.assertIn("[experiment]", rendered)
+
+    def test_same_name_checkouts_can_be_saved_without_renaming_an_existing_checkout(self):
+        with tempfile.TemporaryDirectory() as directory:
+            from core import Store, make_repository
+            base = Path(directory)
+            paths = [base / "code" / folder / "api" for folder in ("a-new", "z-existing")]
+            for path in paths:
+                path.mkdir(parents=True)
+                subprocess.run(["git", "init", "-q", str(path)], check=True)
+            existing = make_repository(paths[1])
+            store = Store(base / "config", base / "state")
+            picker = Picker(FakeScreen([" ", "\n"]), store, Mock())
+            with patch.dict(os.environ, {"HOME": str(base)}):
+                repos = picker.repositories([existing])
+            store.save(Workspace("platform", "Platform", repos))
+            saved = {repo.path: repo.name for repo in store.load()[0].repos}
+            self.assertEqual(saved, {str(paths[0].resolve()): "api-2", str(paths[1].resolve()): "api"})
+            self.assertEqual(existing.name, "api")
 
     def test_checkout_tree_shows_real_path_and_branch(self):
         screen = FakeScreen([])

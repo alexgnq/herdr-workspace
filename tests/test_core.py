@@ -10,6 +10,7 @@ from unittest.mock import patch
 from core import (
     Repository, Store, UserError, Workspace, discover_repositories,
     import_definition, make_repository, portable_definition,
+    name_repositories,
 )
 
 
@@ -138,6 +139,17 @@ class CoreTests(unittest.TestCase):
         discovered = discover_repositories([str(self.root)])
         self.assertEqual({repo.name for repo in discovered}, {"first", "second", "worktree"})
         self.assertTrue(all(repo.remote is None for repo in discovered))
+
+    def test_new_checkout_aliases_are_stable_and_reserve_existing_names(self):
+        existing = self.repo("z/api")
+        another = self.repo("a/api")
+        named_suffix = self.repo("b/api-2")
+        selected = [existing, another, named_suffix]
+        expected = {existing.path: "api", another.path: "api-3", named_suffix.path: "api-2"}
+        for ordering in (selected, list(reversed(selected))):
+            aliases = name_repositories(ordering, [existing])
+            self.assertEqual({repo.path: repo.name for repo in aliases}, expected)
+        self.assertEqual(another.name, "api")
 
     def test_control_characters_are_rejected(self):
         path = self.root / "bad\nname"

@@ -13,6 +13,31 @@ from herdr_workspaces import main
 
 
 class CliTests(unittest.TestCase):
+    def test_same_name_repositories_can_be_created_and_shared_by_remote(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sources = [root / "one" / "api", root / "two" / "api"]
+            targets = [root / "team" / "renamed-one", root / "team" / "renamed-two"]
+            remotes = ["https://example.com/one/api.git", "https://example.com/two/api.git"]
+            for paths in (sources, targets):
+                for path, remote in zip(paths, remotes):
+                    path.mkdir(parents=True)
+                    subprocess.run(["git", "init", "-q", str(path)], check=True)
+                    subprocess.run(["git", "-C", str(path), "remote", "add", "origin", remote], check=True)
+            definition = root / "shared.json"
+            with patch.dict(os.environ, {"HERDR_PLUGIN_CONFIG_DIR": str(root / "config"), "HERDR_PLUGIN_STATE_DIR": str(root / "state")}):
+                errors = io.StringIO()
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(errors):
+                    self.assertEqual(main(["create", "Platform", str(sources[1]), str(sources[0])]), 0, errors.getvalue())
+                    self.assertEqual(main(["export", "Platform", str(definition)]), 0)
+                aliases = {repo.path: repo.name for repo in Store().load()[0].repos}
+                self.assertEqual(aliases, {str(sources[0].resolve()): "api", str(sources[1].resolve()): "api-2"})
+            with patch.dict(os.environ, {"HERDR_PLUGIN_CONFIG_DIR": str(root / "team-config"), "HERDR_PLUGIN_STATE_DIR": str(root / "team-state")}):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(main(["import", str(definition), "--base", str(root / "team")]), 0)
+                imported = {repo.name: repo.path for repo in Store().load()[0].repos}
+                self.assertEqual(imported, {"api": str(targets[0].resolve()), "api-2": str(targets[1].resolve())})
+
     def test_team_export_import_roundtrip_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

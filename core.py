@@ -128,6 +128,26 @@ def make_repository(path) -> Repository:
     return Repository(str(resolved), name, _origin(resolved))
 
 
+def name_repositories(repositories: list[Repository], existing=()) -> list[Repository]:
+    """Give new checkouts distinct names while keeping already selected aliases."""
+    paths = {repo.path for repo in repositories}
+    names = {repo.path: repo.name for repo in existing if repo.path in paths}
+    used = set(names.values())
+    reserved = used | {repo.name for repo in repositories}
+    for repo in sorted(repositories, key=lambda repo: repo.path):
+        if repo.path in names:
+            continue
+        name = repo.name
+        number = 2
+        while name in used or (name != repo.name and name in reserved):
+            suffix = "-" + str(number)
+            name = repo.name[:200 - len(suffix)] + suffix
+            number += 1
+        names[repo.path] = name
+        used.add(name)
+    return [Repository(repo.path, names[repo.path], repo.remote) for repo in repositories]
+
+
 def default_roots() -> list[str]:
     candidates = [Path.home() / name for name in ("code", "Projects", "projects", "src")]
     result = []

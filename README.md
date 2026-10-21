@@ -16,6 +16,12 @@ Sign in to the agent once using its normal command before launching it here.
 herdr plugin install alexgnq/herdr-workspace
 ```
 
+To update a GitHub installation:
+
+```sh
+herdr plugin update herdr-multirepo
+```
+
 Then run this **inside a Herdr pane**:
 
 ```sh
@@ -116,8 +122,9 @@ stays stable while its selected checkout paths stay the same.
 
 Two workspaces selecting the same checkout share its files and branch. For separate branches, add
 existing Git worktrees as separate checkout paths. The picker shows their full paths so you can tell
-them apart. A repo link that has been retargeted or replaced with a copy is rejected on open rather
-than used silently.
+them apart. Checkouts with the same folder name get distinct link names, such as `api` and `api-2`.
+Existing saved names stay the same. A repo link that has been retargeted or replaced with a copy
+is rejected on open rather than used silently.
 
 ## Command line
 
