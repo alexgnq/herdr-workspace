@@ -96,7 +96,7 @@ def main(argv=None):
             if arguments.agent:
                 item.agent = arguments.agent
             launched = Launcher(store).open(item, new_agent=arguments.new_agent)
-            store.save(item)
+            store.set_agent(item.id, item.agent)
             print(launched.message)
         elif command == "export":
             item = find_workspace(store, arguments.name)

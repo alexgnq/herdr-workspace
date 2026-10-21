@@ -301,7 +301,7 @@ class Picker:
         self.screen.start("Opening " + workspace.name, "Opening " + AGENTS[choice] + " with every selected repo.")
         self.screen.window.refresh()
         opened = self.launcher.open(workspace, new_agent=new_agent)
-        self.store.save(workspace)
+        self.store.set_agent(workspace.id, choice)
         return opened.message
 
     def repositories(self, initial, title="Choose repositories"):

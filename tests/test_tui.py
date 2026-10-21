@@ -115,7 +115,8 @@ class PickerTests(unittest.TestCase):
                 self.assertEqual(launched.agent, kind)
                 self.assertFalse(launcher.open.call_args.kwargs["new_agent"])
                 self.assertEqual(screen.choose.call_args.args[2], 2)
-                store.save.assert_called_once_with(launched)
+                store.set_agent.assert_called_once_with(workspace.id, kind)
+                store.save.assert_not_called()
                 self.assertEqual(workspace.agent, "copilot")
 
     def test_cancel_agent_choice_preserves_workspace_and_launches_nothing(self):

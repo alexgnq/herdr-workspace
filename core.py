@@ -316,6 +316,18 @@ class Store:
                 workspaces.append(clean)
             self._write(workspaces)
 
+    def set_agent(self, workspace_id: str, agent: str) -> None:
+        """Remember the last chosen agent without overwriting edits saved meanwhile."""
+        if agent not in AGENTS:
+            raise UserError(UNSUPPORTED)
+        with self._locked():
+            workspaces = self.load()
+            for saved in workspaces:
+                if saved.id == workspace_id and saved.agent != agent:
+                    saved.agent = agent
+                    self._write(workspaces)
+                    return
+
     def delete(self, workspace_id: str) -> None:
         with self._locked():
             workspaces = self.load()

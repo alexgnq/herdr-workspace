@@ -74,6 +74,20 @@ class CoreTests(unittest.TestCase):
             thread.join()
         self.assertEqual(sorted(item.id for item in original_load()), ["w" + str(index) for index in range(6)])
 
+    def test_remembering_the_agent_keeps_changes_saved_meanwhile(self):
+        store = Store(self.root / "config", self.root / "state")
+        stale = self.workspace([self.repo("project")])
+        store.save(stale)
+        edited = self.workspace(stale.repos + [self.repo("added")])
+        store.save(edited)
+        store.set_agent(stale.id, "claude")
+        saved = store.load()[0]
+        self.assertEqual(saved.agent, "claude")
+        self.assertEqual(len(saved.repos), 2)
+        store.delete(stale.id)
+        store.set_agent(stale.id, "codex")
+        self.assertEqual(store.load(), [])
+
     def test_corrupt_store_is_left_unchanged(self):
         store = Store(self.root)
         store.path.write_text("{broken")
