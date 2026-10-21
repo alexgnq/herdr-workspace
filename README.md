@@ -1,4 +1,4 @@
-# Herdr Workspace
+# Herdr Workspaces
 
 Pick repositories, choose Codex, Claude Code or Copilot, and open an agent with access to all of them.
 Save the repo set as a workspace and reuse it for your next agent.
@@ -13,7 +13,7 @@ Requires macOS or Linux, Herdr 0.9.1+, Python 3.9+, Git, and an installed agent 
 Sign in to the agent once using its normal command before launching it here.
 
 ```sh
-herdr plugin install alexgnq/herdr-workspace
+herdr plugin install alexgnq/herdr-workspaces
 ```
 
 To update a GitHub installation:
@@ -96,7 +96,7 @@ There is no build or package installation step.
 Teammates can also install directly from GitHub:
 
 ```sh
-herdr plugin install alexgnq/herdr-workspace
+herdr plugin install alexgnq/herdr-workspaces
 ```
 
 To share a **workspace**, select it and press `e`. The JSON file contains repo names and Git remotes,

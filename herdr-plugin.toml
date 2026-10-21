@@ -1,6 +1,6 @@
 id = "herdr-multirepo"
-name = "Herdr Workspace"
-version = "0.2.3"
+name = "Herdr Workspaces"
+version = "0.2.4"
 min_herdr_version = "0.9.1"
 description = "Pick a set of repositories and open Codex, Claude Code or Copilot with access to all of them."
 platforms = ["macos", "linux"]
