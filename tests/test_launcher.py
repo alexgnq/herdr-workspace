@@ -211,6 +211,47 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual((root / "primary-api").resolve(), self.repo)
         self.assertEqual((root / "api").resolve(), other)
 
+    def test_reserved_and_case_colliding_names_get_distinct_links(self):
+        repositories = []
+        for folder, name in (("one", "workspace.json"), ("two", "Api"), ("three", "api"), ("four", "agents.md")):
+            path = self.root / folder
+            path.mkdir()
+            subprocess.run(["git", "init", "-q", str(path)], check=True)
+            repositories.append(Repository(str(path), name))
+        self.workspace.repos = repositories
+        root = prepare_directory(self.store, self.workspace)
+        links = {item["checkout"]: item["link"] for item in json.loads((root / "workspace.json").read_text())["repositories"]}
+        self.assertEqual(len({link.casefold() for link in links.values()}), 4)
+        self.assertNotIn("workspace.json", links.values())
+        self.assertNotIn("agents.md", links.values())
+        for checkout, link in links.items():
+            self.assertEqual((root / link).resolve(), Path(checkout))
+
+    def test_notes_below_the_marker_survive_reopening_and_repo_changes(self):
+        root = prepare_directory(self.store, self.workspace)
+        agents = root / "AGENTS.md"
+        agents.write_text(agents.read_text() + "\nThe API calls config over gRPC.\n")
+        prepare_directory(self.store, self.workspace)
+        self.assertIn("The API calls config over gRPC.", agents.read_text())
+        self.assertEqual((root / "CLAUDE.md").read_text(), agents.read_text())
+        another = self.root / "another"
+        another.mkdir()
+        subprocess.run(["git", "init", "-q", str(another)], check=True)
+        self.workspace.repos.append(make_repository(another))
+        changed = prepare_directory(self.store, self.workspace)
+        self.assertNotEqual(changed, root)
+        text = (changed / "AGENTS.md").read_text()
+        self.assertIn("The API calls config over gRPC.", text)
+        self.assertIn("another", text)
+        self.assertEqual(text.count("This workspace contains"), 1)
+
+    def test_legacy_generated_claude_file_becomes_a_link_to_agents(self):
+        root = workspace_directory(self.store, self.workspace)
+        root.mkdir(parents=True)
+        (root / "CLAUDE.md").write_text("# Platform workspace\n")
+        prepare_directory(self.store, self.workspace)
+        self.assertEqual(os.readlink(root / "CLAUDE.md"), "AGENTS.md")
+
     def test_startup_prompt_keeps_agent_visible_without_retrying(self):
         self.backend.start_error = "Herdr: agent_not_ready: confirm workspace trust"
         result = self.launcher.open(self.workspace)
@@ -289,6 +330,24 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(len(metadata), 1)
         self.assertIn("w7", metadata[0])
         self.assertFalse(any(call[1] in ("create", "start", "focus") for call in self.backend.calls))
+
+    def test_refresh_continues_past_a_broken_workspace_and_reports_it(self):
+        other = self.root / "other"
+        other.mkdir()
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        broken = Workspace("broken", "Broken", [make_repository(other)])
+        for workspace, space in ((broken, "w1"), (self.workspace, "w2")):
+            self.store.save(workspace)
+            self.backend.workspaces.append({"workspace_id": space, "label": workspace.name})
+            self.backend.panes.append({"workspace_id": space, "pane_id": space + ":p1", "terminal_id": space,
+                                       "cwd": str(prepare_directory(self.store, workspace)), "agent": "codex"})
+        link = workspace_directory(self.store, broken) / "other"
+        link.unlink()
+        link.symlink_to(self.root)
+        with self.assertRaisesRegex(UserError, "Refreshed 1 workspace.*Broken.*link changed"):
+            self.launcher.refresh()
+        metadata = [call for call in self.backend.calls if call[:2] == ("workspace", "report-metadata")]
+        self.assertEqual([call[2] for call in metadata], ["w2"])
 
     def test_startup_refresh_recognizes_restored_pane_and_rebinds_terminal_id(self):
         self.store.save(self.workspace)

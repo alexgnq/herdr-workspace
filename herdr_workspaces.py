@@ -11,7 +11,7 @@ from uuid import uuid4
 from core import AGENTS, PLUGIN_ID, Store, UserError, Workspace, import_definition, make_repository, name_repositories, portable_definition
 from launcher import Herdr, Launcher
 
-VERSION = "0.2.4"
+VERSION = "0.2.5"
 
 
 def find_workspace(store, name):

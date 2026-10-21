@@ -3,6 +3,8 @@ import os
 import stat
 import subprocess
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -49,7 +51,28 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(store.path.stat().st_mode), 0o600)
         store.delete(workspace.id)
         self.assertEqual(store.load(), [])
-        self.assertEqual(list(store.config_dir.glob(".workspaces-*")), [])
+        self.assertEqual(list(store.config_dir.glob(".workspaces.json-*")), [])
+
+    def test_concurrent_saves_keep_every_workspace(self):
+        repo = self.repo("project")
+        store = Store(self.root / "config", self.root / "state")
+        original_load = store.load
+
+        def slow_load():
+            workspaces = original_load()
+            time.sleep(0.02)
+            return workspaces
+
+        store.load = slow_load
+        threads = [
+            threading.Thread(target=store.save, args=(Workspace("w" + str(index), "W" + str(index), [repo]),))
+            for index in range(6)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(sorted(item.id for item in original_load()), ["w" + str(index) for index in range(6)])
 
     def test_corrupt_store_is_left_unchanged(self):
         store = Store(self.root)

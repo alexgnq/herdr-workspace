@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
 import subprocess
 import tempfile
 import uuid
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
@@ -20,6 +22,30 @@ PLUGIN_ID = "herdr-multirepo"
 
 class UserError(Exception):
     """An actionable error that can be shown without a traceback."""
+
+
+def atomic_write(path: Path, text: str) -> None:
+    """Replace a file without exposing a partial write; the result is owner-only."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix="." + path.name + "-", delete=False) as file:
+            temporary = file.name
+            file.write(text)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+@contextmanager
+def exclusive(lock_path: Path):
+    """Serialize read-modify-write cycles across picker, CLI and startup hook processes."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with open(lock_path, "a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        yield
 
 
 @dataclass
@@ -260,40 +286,41 @@ class Store:
             raise UserError(f"Cannot read {self.path}: {error}. The file has been left unchanged.") from error
 
     def _write(self, workspaces: list[Workspace]) -> None:
-        temporary = None
         try:
             self.config_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.config_dir, prefix=".workspaces-", delete=False) as file:
-                temporary = file.name
-                json.dump({"version": 1, "workspaces": [asdict(workspace) for workspace in workspaces]}, file, indent=2, ensure_ascii=False)
-                file.write("\n")
-                file.flush()
-                os.fsync(file.fileno())
-            os.replace(temporary, self.path)
+            data = {"version": 1, "workspaces": [asdict(workspace) for workspace in workspaces]}
+            atomic_write(self.path, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
         except OSError as error:
             raise UserError(f"Cannot save workspaces: {error}") from error
-        finally:
-            if temporary and os.path.exists(temporary):
-                os.unlink(temporary)
+
+    @contextmanager
+    def _locked(self):
+        try:
+            with exclusive(self.config_dir / ".workspaces.lock"):
+                yield
+        except OSError as error:
+            raise UserError(f"Cannot save workspaces: {error}") from error
 
     def save(self, workspace: Workspace) -> None:
         _validate_workspace(workspace)
-        workspaces = self.load()
         # Persist only the credential-free remote identity.
         clean = Workspace(workspace.id, workspace.name.strip(), [Repository(repo.path, repo.name, _remote(repo.remote)) for repo in workspace.repos], workspace.agent)
-        for index, saved in enumerate(workspaces):
-            if saved.id == workspace.id:
-                workspaces[index] = clean
-                break
-        else:
-            workspaces.append(clean)
-        self._write(workspaces)
+        with self._locked():
+            workspaces = self.load()
+            for index, saved in enumerate(workspaces):
+                if saved.id == workspace.id:
+                    workspaces[index] = clean
+                    break
+            else:
+                workspaces.append(clean)
+            self._write(workspaces)
 
     def delete(self, workspace_id: str) -> None:
-        workspaces = self.load()
-        remaining = [workspace for workspace in workspaces if workspace.id != workspace_id]
-        if len(remaining) != len(workspaces):
-            self._write(remaining)
+        with self._locked():
+            workspaces = self.load()
+            remaining = [workspace for workspace in workspaces if workspace.id != workspace_id]
+            if len(remaining) != len(workspaces):
+                self._write(remaining)
 
 
 def portable_definition(workspace: Workspace) -> dict:

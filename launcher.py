@@ -7,12 +7,16 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from typing import Callable, Optional
 from uuid import uuid4
 
-from core import AGENTS, Repository, Store, UserError, Workspace, make_repository
+from core import AGENTS, Repository, Store, UserError, Workspace, atomic_write, exclusive, make_repository
+
+
+# Generated files and their names are reserved; compare case-insensitively for macOS.
+RESERVED_LINKS = {"agents.md", "claude.md", "workspace.json", ".github"}
+NOTES_MARKER = "<!-- herdr-workspaces: notes below this line are kept when the workspace reopens -->"
 
 
 @dataclass
@@ -87,10 +91,10 @@ def prepare_directory(store: Store, workspace: Workspace) -> Path:
         stem = re.sub(r"[^A-Za-z0-9._-]", "-", repo.name).strip(".-") or "repo"
         alias = stem
         suffix = 2
-        while alias in aliases or alias in {"AGENTS.md", "CLAUDE.md", ".github"}:
+        while alias.casefold() in aliases or alias.casefold() in RESERVED_LINKS:
             alias = stem + "-" + str(suffix)
             suffix += 1
-        aliases.add(alias)
+        aliases.add(alias.casefold())
         link = root / alias
         if link.is_symlink():
             if link.resolve() != Path(repo.path).resolve():
@@ -107,21 +111,63 @@ def prepare_directory(store: Store, workspace: Workspace) -> Path:
         "", "Use the absolute repository paths for shell commands and Git operations.",
         "Before working in a repository, read its AGENTS.md or CLAUDE.md and applicable nested instructions.",
         "Run each repository's checks from that repository. Each repository has its own Git history.", "",
+        "Record how these repositories work together below the marker line. Everything above it is regenerated.", "",
+        NOTES_MARKER, "",
     ])
-    instructions = "\n".join(lines)
-    for name in ("AGENTS.md", "CLAUDE.md"):
-        destination = root / name
-        if destination.is_symlink():
-            raise UserError("Refusing to overwrite a workspace instruction symlink: " + str(destination))
-        destination.write_text(instructions, encoding="utf-8")
+    agents = root / "AGENTS.md"
+    if agents.is_symlink():
+        raise UserError("Refusing to overwrite a workspace instruction symlink: " + str(agents))
+    notes = _notes(agents)
+    if notes is None:
+        notes = _previous_notes(store, workspace.id, root) or ""
+    atomic_write(agents, "\n".join(lines) + notes + ("\n" if notes else ""))
+    # One instruction file serves every agent; the link stays inside the workspace folder.
+    claude = root / "CLAUDE.md"
+    if claude.is_symlink() and os.readlink(claude) != "AGENTS.md":
+        raise UserError("Refusing to overwrite a workspace instruction symlink: " + str(claude))
+    if not claude.is_symlink():
+        if claude.exists():
+            claude.unlink()
+        claude.symlink_to("AGENTS.md")
     summary = root / "workspace.json"
     if summary.is_symlink():
         raise UserError("Refusing to overwrite a workspace summary symlink: " + str(summary))
-    summary.write_text(json.dumps({
+    atomic_write(summary, json.dumps({
         "version": 1, "workspace_id": workspace.id, "name": workspace.name,
         "repo_access": "symlinks-to-existing-checkouts", "repositories": bindings,
-    }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    }, indent=2, ensure_ascii=False) + "\n")
     return root
+
+
+def _notes(path: Path) -> Optional[str]:
+    """Text written below the marker, or None when the file has no marker yet."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (FileNotFoundError, UnicodeError):
+        return None
+    if NOTES_MARKER not in text:
+        return None
+    return text.split(NOTES_MARKER, 1)[1].strip("\n")
+
+
+def _previous_notes(store: Store, workspace_id: str, root: Path) -> Optional[str]:
+    """Carry notes into the new folder created when the repo set changes."""
+    candidates = []
+    for summary in (store.state_dir / "roots").glob("*/workspace.json"):
+        agents = summary.parent / "AGENTS.md"
+        if summary.parent == root or summary.is_symlink() or agents.is_symlink() or not agents.is_file():
+            continue
+        try:
+            data = json.loads(summary.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(data, dict) and data.get("workspace_id") == workspace_id:
+            candidates.append(agents)
+    for agents in sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True):
+        notes = _notes(agents)
+        if notes is not None:
+            return notes
+    return None
 
 
 class Launcher:
@@ -200,14 +246,21 @@ class Launcher:
         workspaces = self.herdr.call("workspace", "list").get("workspaces", [])
         panes = self.herdr.call("pane", "list").get("panes", [])
         count = 0
+        failures = []
         for workspace in self.store.load():
-            root = workspace_directory(self.store, workspace)
-            workspace_id = self._existing_workspace(root, workspaces, panes, workspace.name,
-                                                    restored=os.environ.get("HERDR_PLUGIN_EVENT") == "startup")
-            if workspace_id:
-                prepare_directory(self.store, workspace)
-                self._publish(workspace_id, workspace)
-                count += 1
+            # One broken workspace must not hide the repo trees of the others.
+            try:
+                root = workspace_directory(self.store, workspace)
+                workspace_id = self._existing_workspace(root, workspaces, panes, workspace.name,
+                                                        restored=os.environ.get("HERDR_PLUGIN_EVENT") == "startup")
+                if workspace_id:
+                    prepare_directory(self.store, workspace)
+                    self._publish(workspace_id, workspace)
+                    count += 1
+            except (UserError, OSError) as error:
+                failures.append(workspace.name + " (" + str(error) + ")")
+        if failures:
+            raise UserError("Refreshed " + str(count) + " workspace(s). Could not refresh " + "; ".join(failures))
         return count
 
     def _publish(self, workspace_id, workspace):
@@ -256,29 +309,20 @@ class Launcher:
         return None
 
     def _remember(self, root, workspace_id, label, terminal_id=None, pane_id=None):
-        data = self._registry()
-        prior = data.get(root.name, {})
-        keep_sessions = isinstance(prior, dict) and prior.get("id") == workspace_id and (terminal_id or pane_id)
-        terminals = prior.get("terminals", []) if keep_sessions else []
-        terminals = [item for item in terminals if isinstance(item, str)] if isinstance(terminals, list) else []
-        if terminal_id and terminal_id not in terminals:
-            terminals.append(terminal_id)
-        pane_ids = prior.get("panes", []) if keep_sessions else []
-        pane_ids = [item for item in pane_ids if isinstance(item, str)] if isinstance(pane_ids, list) else []
-        if pane_id and pane_id not in pane_ids:
-            pane_ids.append(pane_id)
-        data[root.name] = {"id": workspace_id, "label": label, "terminals": terminals[-64:], "panes": pane_ids}
-        self.store.state_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.store.state_dir,
-                                             prefix=".runtime-", delete=False) as stream:
-                temporary = stream.name
-                json.dump(data, stream)
-            os.replace(temporary, self._registry_path())
-        finally:
-            if temporary and os.path.exists(temporary):
-                os.unlink(temporary)
+        with exclusive(self.store.state_dir / ".runtime.lock"):
+            data = self._registry()
+            prior = data.get(root.name, {})
+            keep_sessions = isinstance(prior, dict) and prior.get("id") == workspace_id and (terminal_id or pane_id)
+            terminals = prior.get("terminals", []) if keep_sessions else []
+            terminals = [item for item in terminals if isinstance(item, str)] if isinstance(terminals, list) else []
+            if terminal_id and terminal_id not in terminals:
+                terminals.append(terminal_id)
+            pane_ids = prior.get("panes", []) if keep_sessions else []
+            pane_ids = [item for item in pane_ids if isinstance(item, str)] if isinstance(pane_ids, list) else []
+            if pane_id and pane_id not in pane_ids:
+                pane_ids.append(pane_id)
+            data[root.name] = {"id": workspace_id, "label": label, "terminals": terminals[-64:], "panes": pane_ids}
+            atomic_write(self._registry_path(), json.dumps(data))
 
     @staticmethod
     def _same_directory(value, expected: Path) -> bool:

@@ -116,9 +116,13 @@ Repo-local agent settings are not merged into a single workspace configuration. 
 own Git checkout and history. The extension does not create branches, worktrees or commits.
 
 The folders under `~/.local/state/herdr/plugins/herdr-multirepo/roots/` contain **symlinks to the selected
-checkouts**, not local copies. `workspace.json` records the exact target of each link. The small
-`AGENTS.md` and `CLAUDE.md` files describe the repo set to agents. The hash identifies a repo set and
+checkouts**, not local copies. `workspace.json` records the exact target of each link. A small
+`AGENTS.md` describes the repo set to agents; `CLAUDE.md` links to it. The hash identifies a repo set and
 stays stable while its selected checkout paths stay the same.
+
+Notes written below the marker line in `AGENTS.md`, by you or an agent, are kept when the workspace
+reopens. They carry over to the new folder when you change the repo set. Everything above the marker
+is regenerated.
 
 Two workspaces selecting the same checkout share its files and branch. For separate branches, add
 existing Git worktrees as separate checkout paths. The picker shows their full paths so you can tell
