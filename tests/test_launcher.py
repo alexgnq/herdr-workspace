@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -555,6 +556,23 @@ class TransportTests(unittest.TestCase):
         with patch("launcher.subprocess.run", return_value=completed):
             with self.assertRaisesRegex(UserError, "Trust this workspace"):
                 Herdr().call("agent", "start")
+
+    def test_host_executable_receives_shell_syntax_as_literal_arguments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            executable = root / "herdr with spaces"
+            executable.write_text(
+                "#!" + sys.executable + "\n"
+                "import json, sys\n"
+                "print(json.dumps({'id': 'test', 'result': {'arguments': sys.argv[1:]}}))\n"
+            )
+            executable.chmod(0o700)
+            marker = root / "injected"
+            label = "$(touch " + str(marker) + "); 'quoted'"
+            with patch.dict(os.environ, {"HERDR_BIN_PATH": str(executable)}):
+                result = Herdr().call("workspace", "create", "--label", label)
+            self.assertEqual(result["arguments"], ["workspace", "create", "--label", label])
+            self.assertFalse(marker.exists())
 
     def test_commands_use_arguments_without_a_shell(self):
         completed = subprocess.CompletedProcess([], 0, json.dumps({"id": "1", "result": {"panes": []}}), "")
