@@ -1,5 +1,5 @@
 id = "herdr-multirepo"
-name = "Multi-repo workspaces"
+name = "Herdr Workspace"
 version = "0.2.2"
 min_herdr_version = "0.9.1"
 description = "Pick a set of repositories and open Codex, Claude Code or Copilot with access to all of them."
