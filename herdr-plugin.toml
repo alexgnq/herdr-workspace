@@ -1,0 +1,33 @@
+id = "herdr-multirepo"
+name = "Multi-repo workspaces"
+version = "0.2.2"
+min_herdr_version = "0.9.1"
+description = "Pick a set of repositories and open Codex, Claude Code or Copilot with access to all of them."
+platforms = ["macos", "linux"]
+
+[[actions]]
+id = "open"
+title = "Open multi-repo workspace"
+contexts = ["workspace"]
+command = ["python3", "herdr_workspaces.py", "open-picker"]
+
+[[panes]]
+id = "picker"
+title = "Workspaces"
+placement = "overlay"
+command = ["python3", "herdr_workspaces.py", "ui"]
+
+[[actions]]
+id = "setup-sidebar"
+title = "Show repo trees in Spaces"
+contexts = ["workspace"]
+command = ["python3", "herdr_workspaces.py", "setup-sidebar"]
+
+[[actions]]
+id = "refresh"
+title = "Refresh workspace repo trees"
+contexts = ["workspace"]
+command = ["python3", "herdr_workspaces.py", "refresh"]
+
+[[startup]]
+command = ["python3", "herdr_workspaces.py", "refresh"]
