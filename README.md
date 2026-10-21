@@ -1,97 +1,53 @@
 # Herdr Workspaces
 
-Open your coding agent across several repos in one Herdr workspace.
+Group Git repositories into saved Herdr workspaces and launch coding agents with access to all of them.
+Switch between Codex, Claude Code, Copilot and Pi, or run them side by side in the same workspace.
 
-Codex, Claude Code, Copilot and Pi. macOS and Linux. Python 3.11+ and Herdr 0.9.1+.
-
-[Get started](#get-started) · [Shortcuts](#shortcuts-and-sidebar) · [Share with your team](#share-with-your-team)
+[Install](#install) · [Usage](#usage) · [Shortcuts and sidebar](#shortcuts-and-sidebar) · [How it works](#directory-access)
 
 ![Create a workspace, select repositories and choose an agent in the terminal picker.](assets/demo.gif)
 
 <sub>Recorded with temporary repos. Agent launches are simulated.</sub>
 
-Save a set of repositories, then open whichever agent you want in the same Herdr space.
-Run different agents side by side, show your repos in the sidebar, and share workspace definitions
-with your team. Repo links point to your existing checkouts.
+## Install
 
-The picker runs in a terminal overlay, uses your terminal's colours and supports small windows.
-Python's standard library is the only runtime dependency. There is no build step.
-
-## Get started
-
-You'll need Git and one of the supported agent CLIs alongside Herdr and Python.
+Requires macOS or Linux, Herdr 0.9.1+, Python 3.11+, Git and a supported agent CLI.
+Sign in to the agent using its normal command before launching it through the plugin.
 Use the latest patch release of a supported Python version.
-Sign in to the agent once using its normal command, then install the plugin:
 
 ```sh
 herdr plugin install alexgnq/herdr-workspaces
 ```
 
-Add the short command to your shell configuration:
-
-```sh
-alias herdrws='herdr plugin action invoke open --plugin herdr-workspaces'
-```
-
-Reload your shell configuration, then run `herdrws` **inside a Herdr pane**. Press `n` to name a workspace, select repositories,
-choose an agent, and review the checkouts before opening.
-
-<details>
-<summary>Full command and updates</summary>
-
-Open the picker without an alias:
+Open the picker **from a Herdr pane**:
 
 ```sh
 herdr plugin action invoke open --plugin herdr-workspaces
 ```
 
-Update an existing GitHub installation:
+Press `n` to create a workspace. Name it, select the repositories, choose an agent and review the
+checkouts before opening. The workspace stays saved for the next session.
+
+### Update
 
 ```sh
 herdr plugin update herdr-workspaces
 ```
 
-</details>
+<details>
+<summary>Install from a local checkout or release ZIP</summary>
 
-The source also includes `bin/herdrws`, which you can copy to a directory on your PATH.
-
-## Shortcuts and sidebar
-
-### Open it with a keybinding
-
-Add this to your Herdr `config.toml` and reload its configuration from Herdr:
-
-```toml
-[[keys.command]]
-key = "prefix+shift+o"
-type = "plugin_action"
-command = "herdr-workspaces.open"
-description = "Open Herdr Workspaces"
-```
-
-With the default prefix, press Ctrl+B, then Shift+O. Choose a different binding if that one is in use.
-
-### Put your repos in the sidebar
-
-Run this once inside Herdr to show the repos beneath each workspace in the **Spaces** sidebar:
+Keep the extracted source in a permanent directory, then link it:
 
 ```sh
-herdr plugin action invoke setup-sidebar --plugin herdr-workspaces
+herdr plugin link /path/to/herdr-workspaces --enabled
 ```
 
-```text
-Platform
-├─ service-api
-├─ web-app
-└─ infrastructure
-```
+Python's standard library is the only runtime dependency. There is no build step or package installation.
 
-This preserves your theme and existing sidebar rows, saves a config backup with the suffix
-`.before-herdr-workspaces`, and reloads the sidebar configuration. Repo labels refresh when the workspace
-opens and when Herdr restarts. Other spaces retain their usual rows. Up to eight repos are shown,
-followed by a count when there are more.
+</details>
 
-## Use
+## Usage
 
 | Key | What it does |
 | :--- | :--- |
@@ -114,39 +70,76 @@ Closing a space also stops its terminals.
 The picker looks two folder levels under `~/code`, `~/Projects`, `~/projects` and `~/src`.
 Use **Add folder** for other locations. Git worktrees are supported.
 
-Opening an existing workspace focuses an agent of the chosen kind when one exists. The last chosen
-agent is preselected next time. **New agent** creates another tab. Each saved workspace keeps one Herdr space. After you change its repos, opening
-it adds a tab with the new repo set to that space. Agents already running keep the repos and
-instructions they started with, and are not reused for the new set. Once no pane in any Herdr session uses an earlier
-repo set's folder, opening the workspace removes it. A folder is kept while it holds notes the current
-folder lacks or files the extension did not create.
+Each saved workspace keeps one Herdr space. Opening it focuses an existing agent of the chosen kind
+or starts a new one. The last chosen agent is preselected next time. Press `a` to start another session.
+Sessions opened with the same repository set share checkouts, branches and notes.
 
-You can run different agents side by side in one workspace, for example Claude Code and Pi: open the
-workspace with each, or press `a` to add another. They share the same checkouts, branches and notes.
+Changing a workspace's repositories affects new sessions. Running agents keep the repository set
+and instructions they started with. Once no pane in any Herdr session uses an earlier repository
+set's folder, opening the workspace removes it. Folders containing extra files or notes absent from
+the current folder are kept.
 
-## Share with your team
+### Import and export
 
-Share this source folder or the release ZIP. Each teammate extracts it somewhere permanent, runs
-`herdr plugin link /path/to/herdr-workspaces --enabled`, and uses the same action or shortcut.
-There is no build or package installation step.
+Press `e` to export the selected workspace or `i` to import a workspace file.
+Exports contain repository names and Git remotes, without local paths or URL credentials.
+During import, select a folder containing the local checkouts. Repositories are matched by remote
+across SSH and HTTPS, including renamed checkout folders. Missing or ambiguous matches produce an
+error so a different checkout folder can be selected. Importing does not clone repositories.
 
-Teammates can also install directly from GitHub:
+## Shortcuts and sidebar
+
+### Use a short command
+
+Add this alias to the shell configuration and reload it:
 
 ```sh
-herdr plugin install alexgnq/herdr-workspaces
+alias herdrws='herdr plugin action invoke open --plugin herdr-workspaces'
 ```
 
-To share a **workspace**, select it and press `e`. The JSON file contains repo names and Git remotes,
-without your machine paths or URL credentials. A teammate imports it and selects their local checkout
-folder. Imports match Git remotes across SSH and HTTPS, including renamed checkout folders. Missing
-or ambiguous repos produce an error so the teammate can choose the correct folder. Imports do not clone.
+Then run `herdrws` from a Herdr pane. The source also includes `bin/herdrws` as a standalone
+shortcut that can be copied to a directory on `PATH`.
+
+### Open it with a keybinding
+
+Add this to Herdr's `config.toml` and reload its configuration from Herdr:
+
+```toml
+[[keys.command]]
+key = "prefix+shift+o"
+type = "plugin_action"
+command = "herdr-workspaces.open"
+description = "Open Herdr Workspaces"
+```
+
+With the default prefix, press Ctrl+B, then Shift+O. Choose a different binding if that one is in use.
+
+### Show repositories in the sidebar
+
+Run this once inside Herdr to show the repos beneath each workspace in the **Spaces** sidebar:
+
+```sh
+herdr plugin action invoke setup-sidebar --plugin herdr-workspaces
+```
+
+```text
+Platform
+├─ service-api
+├─ web-app
+└─ infrastructure
+```
+
+This preserves the theme and existing sidebar rows, saves a config backup with the suffix
+`.before-herdr-workspaces`, and reloads the sidebar configuration. Repo labels refresh when the workspace
+opens and when Herdr restarts. Other spaces retain their usual rows. Up to eight repos are shown,
+followed by a count when there are more.
 
 ## Directory access
 
 Each agent starts in a generated workspace directory containing repo links and a short repo index.
 Agents that limit file access to their folder receive every selected checkout in the form they accept:
 `--add-dir` for Codex, Claude Code and Copilot, with Codex in `workspace-write` sandboxing. Pi has no
-folder limit and needs nothing extra. `agents.py` holds this per-agent detail; adding an agent is one entry.
+folder limit and needs nothing extra.
 Agents retain their normal command approval rules and global settings. This removes the extra directory
 boundary for the chosen repos; it does not disable command, network or first-run trust prompts.
 
@@ -159,13 +152,12 @@ checkouts**, not local copies. `workspace.json` records the exact target of each
 `AGENTS.md` describes the repo set to agents; `CLAUDE.md` links to it. The hash identifies a repo set and
 stays stable while its selected checkout paths stay the same.
 
-Notes written below the marker line in `AGENTS.md`, by you or an agent, are kept when the workspace
-reopens. They carry over to the new folder when you change the repo set. Everything above the marker
-is regenerated.
+Notes written below the marker line in `AGENTS.md` are kept when the workspace reopens. They carry
+over to the new folder when the repository set changes. Everything above the marker is regenerated.
 
 Two workspaces selecting the same checkout share its files and branch. For separate branches, add
-existing Git worktrees as separate checkout paths. The picker shows their full paths so you can tell
-them apart. Checkouts with the same folder name get distinct link names, such as `api` and `api-2`.
+existing Git worktrees as separate checkout paths. The picker shows their full paths to distinguish
+them. Checkouts with the same folder name get distinct link names, such as `api` and `api-2`.
 Existing saved names stay the same. A repo link that has been retargeted or replaced with a copy
 is rejected on open rather than used silently.
 
@@ -173,6 +165,7 @@ is rejected on open rather than used silently.
 
 The picker can also run with `python3 herdr_workspaces.py ui`. Configuration and sharing work outside
 Herdr; launching agents requires a Herdr pane. Run `--help` for the command-line equivalents.
+The following commands run from a source checkout:
 
 ```sh
 python3 herdr_workspaces.py create Platform ~/code/service-a ~/code/service-b --agent codex
@@ -182,6 +175,8 @@ python3 herdr_workspaces.py open Platform --agent claude --new-agent
 ```
 
 ## Develop
+
+`agents.py` contains the supported agents and their directory-access options.
 
 From a source checkout, link the plugin locally:
 
