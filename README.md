@@ -85,8 +85,9 @@ The picker looks two folder levels under `~/code`, `~/Projects`, `~/projects` an
 Use **Add folder** for other locations. Git worktrees are supported.
 
 Opening an existing workspace focuses an agent of the chosen kind when one exists. **New agent**
-creates another tab. Changing the repo set creates a separate workspace context, so running agents
-keep the permissions and instructions they started with.
+creates another tab. Each saved workspace keeps one Herdr space. After you change its repos, opening
+it adds a tab with the new repo set to that space. Agents already running keep the repos and
+instructions they started with, and are not reused for the new set.
 
 ## Share with your team
 

@@ -153,20 +153,27 @@ def _notes(path: Path) -> Optional[str]:
     return text.split(NOTES_MARKER, 1)[1].strip("\n")
 
 
-def _previous_notes(store: Store, workspace_id: str, root: Path) -> Optional[str]:
-    """Carry notes into the new folder created when the repo set changes."""
-    candidates = []
+def sibling_roots(store: Store, workspace_id: str, root: Path) -> list[Path]:
+    """Folders made for other repo sets of the same saved workspace, newest first."""
+    found = []
     for summary in (store.state_dir / "roots").glob("*/workspace.json"):
-        agents = summary.parent / "AGENTS.md"
-        if summary.parent == root or summary.is_symlink() or agents.is_symlink() or not agents.is_file():
+        if summary.parent == root or summary.parent.is_symlink() or summary.is_symlink():
             continue
         try:
             data = json.loads(summary.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         if isinstance(data, dict) and data.get("workspace_id") == workspace_id:
-            candidates.append(agents)
-    for agents in sorted(candidates, key=lambda path: path.stat().st_mtime, reverse=True):
+            found.append(summary.parent)
+    return sorted(found, key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def _previous_notes(store: Store, workspace_id: str, root: Path) -> Optional[str]:
+    """Carry notes into the new folder created when the repo set changes."""
+    for sibling in sibling_roots(store, workspace_id, root):
+        agents = sibling / "AGENTS.md"
+        if agents.is_symlink() or not agents.is_file():
+            continue
         notes = _notes(agents)
         if notes is not None:
             return notes
@@ -198,7 +205,7 @@ class Launcher:
         root = prepare_directory(self.store, checked)
         workspaces = self.herdr.call("workspace", "list").get("workspaces", [])
         panes = self.herdr.call("pane", "list").get("panes", [])
-        workspace_id = self._existing_workspace(root, workspaces, panes, workspace.name)
+        workspace_id = self._find_space(workspace, root, workspaces, panes)
         record = self._registry().get(root.name, {})
         matches = [pane for pane in panes if pane.get("workspace_id") == workspace_id
                    and pane.get("terminal_id") in record.get("terminals", [])] if workspace_id else []
@@ -254,8 +261,8 @@ class Launcher:
             # One broken workspace must not hide the repo trees of the others.
             try:
                 root = workspace_directory(self.store, workspace)
-                workspace_id = self._existing_workspace(root, workspaces, panes, workspace.name,
-                                                        restored=os.environ.get("HERDR_PLUGIN_EVENT") == "startup")
+                workspace_id = self._find_space(workspace, root, workspaces, panes,
+                                                restored=os.environ.get("HERDR_PLUGIN_EVENT") == "startup")
                 if workspace_id:
                     prepare_directory(self.store, workspace)
                     self._publish(workspace_id, workspace)
@@ -281,6 +288,21 @@ class Launcher:
             return data if isinstance(data, dict) else {}
         except (OSError, ValueError):
             return {}
+
+    def _find_space(self, workspace, root, workspaces, panes, restored=False):
+        """A saved workspace keeps one Herdr space, even after its repo set changes.
+
+        Agents started with an earlier repo set keep running in their own folder;
+        the space is found through any of those folders.
+        """
+        found = None
+        for candidate in [root] + sibling_roots(self.store, workspace.id, root):
+            space = self._existing_workspace(candidate, workspaces, panes, workspace.name, restored)
+            found = found or space
+            # At startup, keep checking so every folder's restored agents are rebound.
+            if found and not restored:
+                break
+        return found
 
     def _existing_workspace(self, root, workspaces, panes, label, restored=False):
         record = self._registry().get(root.name, {})

@@ -205,6 +205,70 @@ class LauncherTests(unittest.TestCase):
         self.workspace.repos.append(make_repository(another))
         self.assertNotEqual(old, workspace_directory(self.store, self.workspace))
 
+    def add_repository(self, name):
+        path = self.root / name
+        path.mkdir()
+        subprocess.run(["git", "init", "-q", str(path)], check=True)
+        self.workspace.repos.append(make_repository(path))
+        return path
+
+    def test_changed_repo_set_opens_a_new_tab_in_the_same_space(self):
+        self.launcher.open(self.workspace)
+        old_root = workspace_directory(self.store, self.workspace)
+        self.backend.workspaces = [{"workspace_id": "w7", "label": "Platform"}]
+        self.backend.panes = [{"workspace_id": "w7", "pane_id": "w7:p1", "terminal_id": "terminal-first", "cwd": str(old_root), "agent": "codex"}]
+        another = self.add_repository("another")
+        self.backend.calls.clear()
+        result = self.launcher.open(self.workspace)
+        self.assertEqual(result.workspace_id, "w7")
+        self.assertFalse(any(call[:2] == ("workspace", "create") for call in self.backend.calls))
+        tab = next(call for call in self.backend.calls if call[:2] == ("tab", "create"))
+        self.assertEqual(tab[tab.index("--workspace") + 1], "w7")
+        self.assertEqual(tab[tab.index("--cwd") + 1], str(workspace_directory(self.store, self.workspace)))
+        start = next(call for call in self.backend.calls if call[:2] == ("agent", "start"))
+        self.assertIn(str(another), start)
+        self.assertEqual(self.backend.calls[-1], ("agent", "focus", "w7:p2"))
+        # The running agent keeps the folder, links and instructions it started with.
+        self.assertTrue((old_root / "AGENTS.md").exists())
+        self.assertNotIn("another", (old_root / "AGENTS.md").read_text())
+
+    def test_reopening_after_a_repo_change_focuses_the_agent_with_the_new_set(self):
+        self.launcher.open(self.workspace)
+        old_root = workspace_directory(self.store, self.workspace)
+        self.add_repository("another")
+        self.backend.workspaces = [{"workspace_id": "w7", "label": "Platform"}]
+        self.backend.panes = [{"workspace_id": "w7", "pane_id": "w7:p1", "terminal_id": "terminal-first", "cwd": str(old_root), "agent": "codex"}]
+        self.launcher.open(self.workspace)
+        self.backend.panes.append({"workspace_id": "w7", "pane_id": "w7:p2", "terminal_id": "terminal-second",
+                                   "cwd": str(workspace_directory(self.store, self.workspace)), "agent": "codex"})
+        self.backend.calls.clear()
+        self.launcher.open(self.workspace)
+        self.assertEqual(self.backend.calls[-1], ("agent", "focus", "w7:p2"))
+        self.assertFalse(any(call[1] in ("create", "start") for call in self.backend.calls))
+
+    def test_refresh_after_a_repo_change_shows_the_new_set_in_the_same_space(self):
+        self.store.save(self.workspace)
+        self.launcher.open(self.workspace)
+        old_root = workspace_directory(self.store, self.workspace)
+        self.add_repository("another")
+        self.store.save(self.workspace)
+        self.backend.workspaces = [{"workspace_id": "w7", "label": "Platform"}]
+        self.backend.panes = [{"workspace_id": "w7", "pane_id": "w7:p1", "terminal_id": "terminal-first", "cwd": str(old_root), "agent": "codex"}]
+        self.backend.calls.clear()
+        self.assertEqual(self.launcher.refresh(), 1)
+        metadata = next(call for call in self.backend.calls if call[:2] == ("workspace", "report-metadata"))
+        self.assertEqual(metadata[2], "w7")
+        self.assertTrue(any("another" in argument for argument in metadata))
+
+    def test_closed_space_after_a_repo_change_creates_one_new_space(self):
+        self.launcher.open(self.workspace)
+        self.add_repository("another")
+        self.backend.workspaces = []
+        self.backend.panes = []
+        self.backend.calls.clear()
+        self.launcher.open(self.workspace)
+        self.assertEqual(sum(call[:2] == ("workspace", "create") for call in self.backend.calls), 1)
+
     def test_repository_reordering_preserves_colliding_aliases(self):
         repositories = []
         for name in ("a b", "a-b"):
