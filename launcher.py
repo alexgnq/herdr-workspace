@@ -293,12 +293,23 @@ class Launcher:
 
         Runs only when opening, when Herdr's pane list is complete. Only folders of
         saved workspaces are considered. A folder is kept while a pane uses it, while
-        it holds notes its workspace's current folder lacks, or when it contains
-        anything this plugin did not create.
+        another Herdr session has a record of it (its panes cannot be checked from
+        here), while it holds notes its workspace's current folder lacks, or when it
+        contains anything this plugin did not create.
         """
         current = {saved.id: workspace_directory(self.store, saved) for saved in self.store.load()}
         registry = self._registry()
         live = {pane.get("terminal_id") for pane in panes if pane.get("terminal_id")}
+        elsewhere = set()
+        for other in self.store.state_dir.glob("runtime-*.json"):
+            if other == self._registry_path():
+                continue
+            try:
+                data = json.loads(other.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return  # Ownership is uncertain; keep every folder.
+            if isinstance(data, dict):
+                elsewhere.update(data)
         removed = []
         for summary in (self.store.state_dir / "roots").glob("*/workspace.json"):
             root = summary.parent
@@ -307,7 +318,7 @@ class Launcher:
             except (OSError, ValueError):
                 continue
             owner = data.get("workspace_id") if isinstance(data, dict) else None
-            if root.is_symlink() or root == keep or owner not in current or root == current[owner]:
+            if root.is_symlink() or root == keep or owner not in current or root == current[owner] or root.name in elsewhere:
                 continue
             record = registry.get(root.name)
             if isinstance(record, dict) and live & set(record.get("terminals", [])):

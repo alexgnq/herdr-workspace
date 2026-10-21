@@ -307,6 +307,13 @@ class LauncherTests(unittest.TestCase):
         self.launcher.open(self.workspace)
         self.assertIn("Only in the old folder.", agents.read_text())
 
+    def test_folder_owned_by_another_herdr_session_is_kept(self):
+        old_root = self.change_repos_after_opening()
+        with patch.dict(os.environ, {"HERDR_SOCKET_PATH": "/other/session.sock"}):
+            self.backend.workspaces, self.backend.panes = [], []
+            self.launcher.open(self.workspace)
+        self.assertTrue((old_root / "AGENTS.md").exists())
+
     def test_folder_with_unknown_files_is_left_untouched(self):
         old_root = self.change_repos_after_opening()
         (old_root / "scratch.txt").write_text("agent output")
