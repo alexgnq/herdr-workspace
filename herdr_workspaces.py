@@ -13,7 +13,6 @@ from core import AGENTS, PLUGIN_ID, Store, UserError, Workspace, import_definiti
 from launcher import Herdr, Launcher
 
 
-
 def version():
     """The single version number lives in the Herdr plugin manifest."""
     try:
