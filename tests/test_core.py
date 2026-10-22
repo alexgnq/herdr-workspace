@@ -276,6 +276,24 @@ class CoreTests(unittest.TestCase):
         self.assertEqual({repo.name for repo in discovered}, {"first", "second", "worktree"})
         self.assertTrue(all(repo.remote is None for repo in discovered))
 
+    def test_nested_search_folder_is_scanned_from_its_own_root(self):
+        nested = self.repo("Documents/git/api")
+        parent = str(self.root)
+        git_folder = str(self.root / "Documents" / "git")
+        for roots in ([parent, git_folder], [git_folder, parent]):
+            with self.subTest(roots=roots):
+                actual = {repo.path for repo in discover_repositories(roots)}
+                self.assertEqual(actual, {nested.path})
+
+    def test_overlapping_search_folders_deduplicate_symlinked_checkouts(self):
+        nested = self.repo("Documents/git/api")
+        git_folder = self.root / "Documents" / "git"
+        alias = self.root / "shortcut"
+        alias.symlink_to(git_folder, target_is_directory=True)
+        (git_folder / "loop").symlink_to(self.root, target_is_directory=True)
+        roots = [str(self.root), str(alias), str(git_folder)]
+        self.assertEqual([repo.path for repo in discover_repositories(roots)], [nested.path])
+
     def test_new_checkout_aliases_are_stable_and_reserve_existing_names(self):
         existing = self.repo("z/api")
         another = self.repo("a/api")

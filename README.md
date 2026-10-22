@@ -79,7 +79,11 @@ Changes are saved automatically and apply to every workspace. This is a one-time
 normal workspace setup uses the saved folders without asking again. Removing a search folder keeps
 its repositories and any saved workspace definitions.
 
-The picker searches two folder levels beneath each saved location. Before any folders are configured,
+Folder prompts suggest directories as you type. Press `Tab` to complete a path, or use `Up`/`Down`
+and `Enter` to choose a suggestion. Start with `~/` to browse from the home folder.
+
+The picker searches two folder levels beneath each saved location, including locations nested inside
+another saved folder. Before any folders are configured,
 it looks under `~/code`, `~/Projects`, `~/projects` and `~/src`, or the home folder if none exist.
 **Restore default folders** returns to those locations. Git worktrees are supported, and `Ctrl+A` can
 still add an individual checkout outside the search folders.
