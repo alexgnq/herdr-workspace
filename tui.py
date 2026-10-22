@@ -312,10 +312,55 @@ class Picker:
         self.store.set_agent(workspace.id, choice)
         return opened.message
 
+    def repository_folders(self):
+        selected = 0
+        error = ""
+        while True:
+            folders = self.store.repository_folders()
+            options = ["+ Add folder"] + [
+                short_path(folder) + ("  [unavailable]" if not Path(folder).is_dir() else "")
+                for folder in folders
+            ] + ["Restore default folders", "Back"]
+            choice = self.screen.choose(
+                "Repository folders", options, selected,
+                subtitle=error or "All workspaces · saved automatically",
+            )
+            if choice is None or choice == len(folders) + 2:
+                return
+            selected, error = choice, ""
+            try:
+                if choice == 0:
+                    path = self.screen.prompt("Add a repository folder", hint="A folder containing checkouts, e.g. ~/development")
+                    if path is None:
+                        continue
+                    self.store.save_repository_folders(folders + [path])
+                elif choice == len(folders) + 1:
+                    self.store.save_repository_folders(default_roots())
+                else:
+                    index = choice - 1
+                    action = self.screen.choose(
+                        short_path(folders[index]), ["Change folder", "Remove from search", "Back"],
+                        subtitle="Removing a search folder keeps repos and saved workspaces.",
+                    )
+                    if action == 0:
+                        path = self.screen.prompt("Repository folder", folders[index], "A folder containing Git checkouts.")
+                        if path is None:
+                            continue
+                        folders[index] = path
+                    elif action == 1:
+                        del folders[index]
+                    else:
+                        continue
+                    self.store.save_repository_folders(folders)
+                self.message = "Repository folders saved."
+                selected = min(selected, len(self.store.repository_folders()) + 1)
+            except UserError as exc:
+                error = str(exc)
+
     def repositories(self, initial, title="Choose repositories"):
         screen = self.screen
         chosen = {repo.path: repo for repo in initial}
-        candidates = {repo.path: repo for repo in discover_repositories(default_roots())}
+        candidates = {repo.path: repo for repo in discover_repositories(self.store.repository_folders())}
         candidates.update(chosen)
         selected = 0
         query = ""
@@ -341,8 +386,8 @@ class Picker:
                 screen.write(row, selected_text(text, width - 4) if index == selected else text, screen.selection if index == selected else 0)
                 screen.write(row + 1, "    " + short_path(str(Path(repo.path).resolve())), curses.A_DIM)
             if not visible:
-                screen.write(7, "No matches. Ctrl+A adds a checkout folder.")
-            screen.footer("Type: find  Space: select  ↑↓: move  ^A: add  Enter: done  Esc: back", error)
+                screen.write(7, "No matches. Ctrl+F: folders, Ctrl+A: add repo.")
+            screen.footer("Type:find Space:select ↑↓:move ^F:folders ^A:add repo Enter:done Esc:back", error)
             key = screen.key()
             if key in ("\x1b", "\x03"):
                 return None
@@ -361,8 +406,16 @@ class Picker:
                 query, selected = query[:-1], 0
             elif key == "\x15":
                 query, selected = "", 0
+            elif key == "\x06":
+                try:
+                    self.repository_folders()
+                    candidates = {repo.path: repo for repo in discover_repositories(self.store.repository_folders())}
+                    candidates.update(chosen)
+                    query, selected, error = "", 0, ""
+                except UserError as exc:
+                    error = str(exc)
             elif key == "\x01":
-                path = screen.prompt("Add a repository folder", hint="Paste the local checkout path.")
+                path = screen.prompt("Add a checkout", hint="Paste the path of a single Git repository.")
                 if path:
                     try:
                         repo = make_repository(path)
@@ -514,8 +567,9 @@ class Picker:
             data = json.loads(source.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
             raise UserError("Could not read workspace file: " + str(exc)) from exc
-        roots = default_roots()
-        base = self.screen.prompt("Where do you keep these repos?", roots[0] if roots else "~/code",
+        roots = self.store.repository_folders()
+        default = next((root for root in roots if Path(root).is_dir()), roots[0] if roots else "~/code")
+        base = self.screen.prompt("Where do you keep these repos?", default,
                                   "Repos are matched by their Git remote when available.")
         if base is None:
             return None
@@ -532,7 +586,7 @@ class Picker:
                 continue
             workspaces = self.store.load()
             options = ["{}   {} repos".format(workspace.name, len(workspace.repos)) for workspace in workspaces]
-            options += ["+ New workspace", "Open shared workspace"]
+            options += ["+ New workspace", "Open shared workspace", "Repository folders"]
             selected = min(selected, len(options) - 1)
             screen.start("Your workspaces", "Choose a workspace, then an agent")
             height, width = screen.size()
@@ -561,7 +615,7 @@ class Picker:
                     row = 6 + min(len(options), count)
                     screen.write(row, "Existing checkout links", screen.accent)
                     self.tree(workspaces[selected].repos, row + 1, height - 5)
-            screen.footer("Enter:open a:+agent r:edit n:new e:share i:import d:remove q:quit", self.message)
+            screen.footer("Enter:open a:+agent r:edit n:new f:folders e:export i:import d:remove q:quit", self.message)
             key = screen.key()
             if key in ("q", "\x1b", "\x03"):
                 return None
@@ -577,6 +631,8 @@ class Picker:
                     result = self.new_workspace()
                 elif key == "i" or (key in ("\n", "\r", curses.KEY_ENTER) and selected == len(workspaces) + 1):
                     result = self.import_workspace()
+                elif key == "f" or (key in ("\n", "\r", curses.KEY_ENTER) and selected == len(workspaces) + 2):
+                    self.repository_folders()
                 elif selected < len(workspaces):
                     workspace = workspaces[selected]
                     if key in ("\n", "\r", curses.KEY_ENTER):

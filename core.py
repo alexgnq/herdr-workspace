@@ -259,6 +259,61 @@ class Store:
         self.state_dir = Path(state_dir).expanduser()
         self.path = self.config_dir / "workspaces.json"
 
+    def _settings(self) -> Optional[dict]:
+        path = self.config_dir / "settings.json"
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        except (OSError, UnicodeError) as error:
+            raise UserError(f"Cannot read {path}: {error}. The file has been left unchanged.") from error
+        try:
+            data = json.loads(raw)
+            if (not isinstance(data, dict) or type(data.get("version")) is not int
+                    or data.get("version") != 1 or not isinstance(data.get("repository_folders"), list)):
+                raise ValueError("unsupported settings format")
+            for folder in data["repository_folders"]:
+                _text(folder, "Repository folder")
+                if not Path(folder).is_absolute():
+                    raise ValueError("saved repository folders must be absolute")
+            return data
+        except (ValueError, UserError) as error:
+            raise UserError(f"Cannot read {path}: {error}. The file has been left unchanged.") from error
+
+    def repository_folders(self) -> list[str]:
+        """Saved discovery folders, or the usual defaults before any are saved."""
+        settings = self._settings()
+        return list(settings["repository_folders"]) if settings is not None else default_roots()
+
+    def save_repository_folders(self, folders: list[str]) -> None:
+        """Save discovery folders without changing workspace definitions."""
+        if not isinstance(folders, list):
+            raise UserError("Repository folders must be a list of folder paths.")
+        normalized = []
+        for value in folders:
+            raw = _text(value, "Repository folder")
+            try:
+                folder = str(Path(raw).expanduser().resolve())
+            except (OSError, RuntimeError) as error:
+                raise UserError(f"Cannot resolve repository folder: {raw}") from error
+            _text(folder, "Repository folder")
+            if folder not in normalized:
+                normalized.append(folder)
+        try:
+            with exclusive(self.config_dir / ".settings.lock"):
+                settings = self._settings()
+                previous = set(settings["repository_folders"]) if settings is not None else set()
+                for folder in normalized:
+                    path = Path(folder)
+                    # A disconnected drive must not prevent editing the other folders.
+                    if not path.is_dir() and (path.exists() or folder not in previous):
+                        raise UserError(f"Repository folder not found or not a directory: {folder}")
+                data = settings if settings is not None else {"version": 1}
+                data["repository_folders"] = normalized
+                atomic_write(self.config_dir / "settings.json", json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        except OSError as error:
+            raise UserError(f"Cannot save repository folders: {error}") from error
+
     def load(self) -> list[Workspace]:
         try:
             raw = self.path.read_text(encoding="utf-8")

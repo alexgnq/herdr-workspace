@@ -7,7 +7,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from core import Repository, UserError, Workspace
+from core import Repository, Store, UserError, Workspace, make_repository
 from tui import Picker, clipped, plain
 
 
@@ -217,6 +217,103 @@ class PickerTests(unittest.TestCase):
         self.assertFalse(screen.prompts)
         self.assertTrue(any("feature/auth" in text for _, text, _ in screen.writes))
         self.assertTrue(any("/tmp/other/web" in text for _, text, _ in screen.writes))
+
+    def test_repository_folders_are_visible_and_accessible_without_a_workspace(self):
+        for keys in (["f", "q"], [curses.KEY_DOWN, curses.KEY_DOWN, "\n", "q"]):
+            with self.subTest(keys=keys):
+                screen = FakeScreen(keys, choices=[None])
+                screen.choose = Mock(side_effect=screen.choose)
+                store = Mock()
+                store.load.return_value = []
+                store.repository_folders.return_value = []
+                self.assertIsNone(Picker(screen, store, Mock()).run())
+                self.assertEqual(screen.choose.call_args.args[0], "Repository folders")
+                store.save_repository_folders.assert_not_called()
+                self.assertTrue(any("Repository folders" in text for _, text, _ in screen.writes))
+
+    def test_add_repository_folder_is_remembered_after_reopening(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            folder = base / "development"
+            folder.mkdir()
+            store = Store(base / "config", base / "state")
+            screen = FakeScreen([], answers=[str(folder)], choices=[0, None])
+            with patch("core.default_roots", return_value=[]):
+                Picker(screen, store, Mock()).repository_folders()
+            self.assertEqual(Store(base / "config", base / "state").repository_folders(), [str(folder.resolve())])
+
+    def test_change_and_remove_search_folders_keep_repos_and_saved_workspaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            first, second, replacement = [base / name for name in ("first", "second", "replacement")]
+            for folder in (first, second, replacement):
+                folder.mkdir()
+            store = Store(base / "config", base / "state")
+            store.save_repository_folders([str(first), str(second)])
+            store.save(self.workspace())
+            original = store.path.read_bytes()
+            screen = FakeScreen([], answers=[str(replacement)], choices=[1, 0, 2, 1, None])
+            Picker(screen, store, Mock()).repository_folders()
+            self.assertEqual(store.repository_folders(), [str(replacement.resolve())])
+            self.assertTrue(first.is_dir())
+            self.assertTrue(second.is_dir())
+            self.assertEqual(store.path.read_bytes(), original)
+
+    def test_restore_default_repository_folders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            custom, default = base / "custom", base / "code"
+            custom.mkdir()
+            default.mkdir()
+            store = Store(base / "config", base / "state")
+            store.save_repository_folders([str(custom)])
+            screen = FakeScreen([], choices=[2, None])
+            with patch("tui.default_roots", return_value=[str(default)]):
+                Picker(screen, store, Mock()).repository_folders()
+            self.assertEqual(store.repository_folders(), [str(default.resolve())])
+
+    def test_invalid_search_folder_is_reported_without_losing_settings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            store = Store(base / "config", base / "state")
+            store.save_repository_folders([str(base)])
+            screen = FakeScreen([], answers=[str(base / "missing")], choices=[0, None])
+            screen.choose = Mock(side_effect=screen.choose)
+            Picker(screen, store, Mock()).repository_folders()
+            self.assertEqual(store.repository_folders(), [str(base.resolve())])
+            self.assertNotEqual(screen.choose.call_args.kwargs["subtitle"], "All workspaces · saved automatically")
+
+    def test_import_suggests_an_available_saved_folder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            missing, present = base / "external-drive", base / "code"
+            missing.mkdir()
+            present.mkdir()
+            store = Store(base / "config", base / "state")
+            store.save_repository_folders([str(missing), str(present)])
+            missing.rmdir()
+            definition = base / "workspace.json"
+            definition.write_text("{}")
+            screen = FakeScreen([], answers=[str(definition), None])
+            self.assertIsNone(Picker(screen, store, Mock()).import_workspace())
+            self.assertEqual(screen.prompts[1][1], str(present.resolve()))
+
+    def test_repo_picker_rescans_saved_folders_and_keeps_selected_checkouts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            first, second = base / "first", base / "second"
+            paths = [first / "api", second / "web"]
+            for path in paths:
+                path.mkdir(parents=True)
+                subprocess.run(["git", "init", "-q", str(path)], check=True)
+            store = Store(base / "config", base / "state")
+            store.save_repository_folders([str(first)])
+            initial = make_repository(paths[0])
+            screen = FakeScreen(["\x06", curses.KEY_DOWN, " ", "\n"],
+                                answers=[str(second)], choices=[0, None])
+            result = Picker(screen, store, Mock()).repositories([initial])
+            self.assertEqual({repo.path for repo in result}, {str(path.resolve()) for path in paths})
+            self.assertEqual(store.repository_folders(), [str(first.resolve()), str(second.resolve())])
 
     def test_same_name_checkouts_have_distinct_paths_and_branches(self):
         repos = [Repository("/tmp/main/service", "service"), Repository("/tmp/experiment/service", "service")]
