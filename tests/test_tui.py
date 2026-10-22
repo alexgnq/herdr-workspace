@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from core import Repository, Store, UserError, Workspace, make_repository
-from tui import Picker, clipped, plain
+from tui import Picker, Screen, clipped, plain
 
 
 class FakeScreen:
@@ -50,6 +50,126 @@ class FakeScreen:
     def prompt(self, *args, **kwargs):
         self.prompts.append(args)
         return next(self.answers, None)
+
+
+class PromptWindow:
+    def __init__(self, keys, size=(24, 80)):
+        self.keys = iter(keys)
+        self.dimensions = size
+        self.writes = []
+        self.moves = []
+
+    def keypad(self, enabled):
+        pass
+
+    def getmaxyx(self):
+        return self.dimensions
+
+    def erase(self):
+        pass
+
+    def addstr(self, row, col, text, attr=0):
+        self.writes.append((row, col, text))
+
+    def move(self, row, col):
+        self.moves.append((row, col))
+
+    def refresh(self):
+        pass
+
+    def get_wch(self):
+        return next(self.keys)
+
+
+class FolderPromptTests(unittest.TestCase):
+    def test_tab_completes_nested_folders_with_spaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            target = base / "Development" / "repo with spaces"
+            target.mkdir(parents=True)
+            window = PromptWindow(["\t", *"repo", "\t", "\n"])
+            result = Screen(window).prompt("Folder", str(base / "Dev"), directory=True)
+            self.assertEqual(result, str(target) + "/")
+
+    def test_common_prefix_and_arrow_selection_choose_between_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            for name in ("api", "apple"):
+                (base / name).mkdir()
+            window = PromptWindow(["\t", curses.KEY_DOWN, curses.KEY_DOWN, "\n"])
+            result = Screen(window).prompt("Folder", str(base / "a"), directory=True)
+            self.assertEqual(result, str(base / "apple") + "/")
+            rendered = "\n".join(text for _, _, text in window.writes)
+            self.assertIn("api/", rendered)
+            self.assertIn("> apple/", rendered)
+
+    def test_empty_input_can_complete_from_home(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "development").mkdir()
+            window = PromptWindow(["\t", *"dev", "\t", "\n"])
+            with patch.dict(os.environ, {"HOME": directory}):
+                result = Screen(window).prompt("Folder", directory=True)
+            self.assertEqual(result, "~/development/")
+
+    def test_tab_prefers_the_exact_folder_over_a_longer_sibling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            for name in ("code", "code-old"):
+                (base / name).mkdir()
+            window = PromptWindow(["\t", "\n"])
+            result = Screen(window).prompt("Folder", str(base / "code"), directory=True)
+            self.assertEqual(result, str(base / "code") + "/")
+
+    def test_directory_paths_keep_meaningful_whitespace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / " workspace "
+            target.mkdir()
+            window = PromptWindow(["\n"])
+            self.assertEqual(Screen(window).prompt("Folder", str(target), directory=True), str(target))
+            with patch("tui.directory_completions", return_value=["  workspace/"]):
+                window = PromptWindow(["\t", "\n"])
+                self.assertEqual(Screen(window).prompt("Folder", "  work", directory=True), "  workspace/")
+
+    def test_literal_folder_spelling_wins_on_case_sensitive_filesystems(self):
+        with patch("tui.directory_completions", return_value=["/tmp/Code/", "/tmp/code/"]):
+            window = PromptWindow(["\t", "\n"])
+            self.assertEqual(Screen(window).prompt("Folder", "/tmp/code", directory=True), "/tmp/code/")
+
+    def test_manual_input_and_cancel_still_work_without_matches(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = str(Path(directory) / "missing")
+            window = PromptWindow(["\t", "\n"])
+            self.assertEqual(Screen(window).prompt("Folder", path, directory=True), path)
+            self.assertTrue(any("No matching folders" in text for _, _, text in window.writes))
+            window = PromptWindow(["\t", "\x1b"])
+            self.assertIsNone(Screen(window).prompt("Folder", "~", directory=True))
+
+    def test_completion_does_not_corrupt_text_when_the_cursor_is_in_the_middle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "development"
+            target.mkdir()
+            window = PromptWindow([curses.KEY_LEFT, "\t", curses.KEY_END, "\t", "\n"])
+            result = Screen(window).prompt("Folder", str(Path(directory) / "dev"), directory=True)
+            self.assertEqual(result, str(target) + "/")
+
+    def test_small_terminal_scrolls_matches_above_the_footer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            for index in range(10):
+                (base / ("a" + str(index))).mkdir()
+            window = PromptWindow([curses.KEY_DOWN] * 9 + ["\n"], size=(14, 38))
+            result = Screen(window).prompt("Folder", str(base / "a"), directory=True)
+            self.assertEqual(result, str(base / "a8") + "/")
+            matches = [(row, text) for row, _, text in window.writes if text.lstrip("> ").startswith("a") and text.endswith("/")]
+            self.assertTrue(matches)
+            self.assertTrue(all(8 <= row < 10 for row, _ in matches))
+            self.assertTrue(all(col <= 36 for _, col in window.moves))
+
+    def test_workspace_names_do_not_trigger_filesystem_completion(self):
+        window = PromptWindow(["\t", "\n"])
+        with patch("tui.directory_completions") as complete:
+            self.assertEqual(Screen(window).prompt("Workspace name", "dev"), "dev")
+        complete.assert_not_called()
 
 
 class PickerTests(unittest.TestCase):

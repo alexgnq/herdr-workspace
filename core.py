@@ -187,8 +187,6 @@ def default_roots() -> list[str]:
 def discover_repositories(roots: list[str]) -> list[Repository]:
     """Look at each root and two folder levels; never walk inside a repo."""
     found = {}
-    visited = set()
-    remaining = 5000
 
     def visit(path: Path, depth: int) -> None:
         nonlocal remaining
@@ -220,6 +218,8 @@ def discover_repositories(roots: list[str]) -> list[Repository]:
             return
 
     for root in roots:
+        visited = set()
+        remaining = 5000
         visit(Path(root).expanduser(), 0)
     return sorted(found.values(), key=lambda repo: (repo.name.casefold(), repo.path))
 

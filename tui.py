@@ -12,6 +12,8 @@ import unicodedata
 import uuid
 from pathlib import Path
 
+from paths import directory_completions
+
 from core import (
     AGENTS,
     UserError,
@@ -171,10 +173,13 @@ class Screen:
         self.write(1, "Esc: back", col=0)
         return False
 
-    def prompt(self, title, value="", hint="", allow_empty=False):
+    def prompt(self, title, value="", hint="", allow_empty=False, directory=False):
         text = str(value)
         cursor = len(text)
         error = ""
+        completion_value = None
+        matches = []
+        selected = -1
         try:
             curses.curs_set(1)
         except curses.error:
@@ -186,23 +191,66 @@ class Screen:
                         return None
                     continue
                 self.start(title, hint)
-                _, width = self.size()
-                visible = clipped(text, width - 6)
-                if len(visible) < cursor:
-                    visible = clipped(text[max(0, cursor - (width - 7)):], width - 6)
-                self.write(6, "> " + visible)
-                self.footer("Enter: accept   Esc: cancel", error)
+                height, width = self.size()
+                offset, used = cursor, 0
+                while offset and used + char_width(text[offset - 1]) <= width - 6:
+                    offset -= 1
+                    used += char_width(text[offset])
+                self.write(6, "> " + clipped(text[offset:], width - 6))
+                if directory:
+                    completion_input = text if cursor == len(text) else None
+                    if completion_input != completion_value:
+                        matches = directory_completions(completion_input) if completion_input is not None else []
+                        completion_value, selected, error = completion_input, -1, ""
+                    count = max(0, height - 12)
+                    start = max(0, selected - count + 1)
+                    if matches:
+                        self.write(7, "Matching folders", curses.A_DIM)
+                        for index in range(start, min(len(matches), start + count)):
+                            label = Path(matches[index].rstrip("/")).name + "/"
+                            label = ("> " if index == selected else "  ") + label
+                            self.write(8 + index - start, label,
+                                       self.selection if index == selected else curses.A_DIM)
+                    elif completion_input:
+                        self.write(8, "No matching folders.", curses.A_DIM)
+                self.footer("Tab: complete   Up/Down: choose   Enter: accept   Esc: cancel"
+                            if directory else "Enter: accept   Esc: cancel", error)
                 try:
-                    self.window.move(6, min(width - 2, 4 + display_width(clipped(text[:cursor], width - 6))))
+                    self.window.move(6, 4 + display_width(text[offset:cursor]))
                 except curses.error:
                     pass
                 key = self.key()
                 if key in ("\x1b", "\x03"):
                     return None
                 if key in ("\n", "\r", curses.KEY_ENTER):
+                    if directory and selected >= 0:
+                        text = matches[selected]
                     if text.strip() or allow_empty:
-                        return text.strip()
+                        return text if directory else text.strip()
                     error = "Enter a value, or Esc to cancel."
+                elif directory and key in (curses.KEY_UP, curses.KEY_DOWN, curses.KEY_BTAB) and matches:
+                    if key == curses.KEY_DOWN:
+                        selected = (selected + 1) % len(matches)
+                    else:
+                        selected = len(matches) - 1 if selected < 0 else (selected - 1) % len(matches)
+                elif directory and key == "\t":
+                    if cursor != len(text):
+                        error = "Move to the end of the path to complete."
+                    elif matches:
+                        common = os.path.commonprefix(matches)
+                        exact = next((match for match in matches
+                                      if match.casefold() == text.casefold() + "/"), None)
+                        if selected >= 0:
+                            text = matches[selected]
+                        elif text + "/" in matches:
+                            text += "/"
+                        elif exact:
+                            text = exact
+                        else:
+                            text = common if len(common) > len(text) else matches[0]
+                        cursor = len(text)
+                    else:
+                        error = "No matching folders."
                 elif key in (curses.KEY_BACKSPACE, "\x7f", "\b") and cursor:
                     text = text[:cursor - 1] + text[cursor:]
                     cursor -= 1
@@ -330,7 +378,8 @@ class Picker:
             selected, error = choice, ""
             try:
                 if choice == 0:
-                    path = self.screen.prompt("Add a repository folder", hint="A folder containing checkouts, e.g. ~/development")
+                    path = self.screen.prompt("Add a repository folder", hint="A folder containing checkouts, e.g. ~/development",
+                                              directory=True)
                     if path is None:
                         continue
                     self.store.save_repository_folders(folders + [path])
@@ -343,7 +392,8 @@ class Picker:
                         subtitle="Removing a search folder keeps repos and saved workspaces.",
                     )
                     if action == 0:
-                        path = self.screen.prompt("Repository folder", folders[index], "A folder containing Git checkouts.")
+                        path = self.screen.prompt("Repository folder", folders[index], "A folder containing Git checkouts.",
+                                                  directory=True)
                         if path is None:
                             continue
                         folders[index] = path
@@ -415,7 +465,7 @@ class Picker:
                 except UserError as exc:
                     error = str(exc)
             elif key == "\x01":
-                path = screen.prompt("Add a checkout", hint="Paste the path of a single Git repository.")
+                path = screen.prompt("Add a checkout", hint="Paste the path of a single Git repository.", directory=True)
                 if path:
                     try:
                         repo = make_repository(path)
@@ -570,7 +620,7 @@ class Picker:
         roots = self.store.repository_folders()
         default = next((root for root in roots if Path(root).is_dir()), roots[0] if roots else "~/code")
         base = self.screen.prompt("Where do you keep these repos?", default,
-                                  "Repos are matched by their Git remote when available.")
+                                  "Repos are matched by their Git remote when available.", directory=True)
         if base is None:
             return None
         workspace = import_definition(data, base)
