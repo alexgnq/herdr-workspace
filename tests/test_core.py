@@ -39,6 +39,105 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(store.config_dir.exists())
         self.assertFalse(store.state_dir.exists())
 
+    def test_repository_folders_use_defaults_without_creating_files(self):
+        store = Store(self.root / "config", self.root / "state")
+        with patch("core.default_roots", return_value=[str(self.root)]):
+            self.assertEqual(store.repository_folders(), [str(self.root)])
+        self.assertFalse(store.config_dir.exists())
+        self.assertFalse(store.state_dir.exists())
+
+    def test_repository_folders_persist_without_changing_workspaces(self):
+        store = Store(self.root / "config", self.root / "state")
+        store.save(self.workspace([self.repo("project")]))
+        original = store.path.read_bytes()
+        store.save_repository_folders([str(self.root)])
+        restored = Store(store.config_dir, store.state_dir)
+        self.assertEqual(restored.repository_folders(), [str(self.root.resolve())])
+        self.assertEqual(store.path.read_bytes(), original)
+        self.assertEqual(stat.S_IMODE((store.config_dir / "settings.json").stat().st_mode), 0o600)
+        self.assertFalse(store.state_dir.exists())
+        self.assertEqual(list(store.config_dir.glob(".settings.json-*")), [])
+
+    def test_repository_folders_normalize_tilde_relative_paths_and_duplicates(self):
+        folder = self.root / "code"
+        folder.mkdir()
+        alias = self.root / "alias"
+        alias.symlink_to(folder, target_is_directory=True)
+        store = Store(self.root / "config", self.root / "state")
+        relative = os.path.relpath(folder, Path.cwd())
+        with patch.dict(os.environ, {"HOME": str(self.root)}):
+            store.save_repository_folders(["~/code", str(folder), str(alias), relative])
+        self.assertEqual(store.repository_folders(), [str(folder.resolve())])
+
+    def test_empty_repository_folders_disable_default_discovery(self):
+        store = Store(self.root / "config", self.root / "state")
+        store.save_repository_folders([])
+        with patch("core.default_roots", return_value=[str(self.root)]):
+            self.assertEqual(Store(store.config_dir, store.state_dir).repository_folders(), [])
+        self.assertFalse(store.path.exists())
+
+    def test_missing_saved_repository_folder_can_be_kept_or_removed(self):
+        absent = self.root / "external-drive"
+        present = self.root / "code"
+        added = self.root / "other-code"
+        for folder in (absent, present, added):
+            folder.mkdir()
+        store = Store(self.root / "config", self.root / "state")
+        store.save_repository_folders([str(absent), str(present)])
+        expected = [str(absent.resolve()), str(present.resolve())]
+        absent.rmdir()
+        original = (store.config_dir / "settings.json").read_bytes()
+        self.assertEqual(store.repository_folders(), expected)
+        self.assertEqual((store.config_dir / "settings.json").read_bytes(), original)
+        store.save_repository_folders(expected + [str(added)])
+        self.assertIn(str(absent.resolve()), store.repository_folders())
+        store.save_repository_folders([str(present), str(added)])
+        self.assertEqual(store.repository_folders(), [str(present.resolve()), str(added.resolve())])
+        with self.assertRaises(UserError):
+            store.save_repository_folders([str(absent)])
+
+    def test_invalid_repository_folders_do_not_replace_settings(self):
+        store = Store(self.root / "config", self.root / "state")
+        store.save_repository_folders([str(self.root)])
+        settings = store.config_dir / "settings.json"
+        original = settings.read_bytes()
+        regular = self.root / "file"
+        regular.write_text("not a folder")
+        control = self.root / "bad\nfolder"
+        control.mkdir()
+        alias = self.root / "alias"
+        alias.symlink_to(control, target_is_directory=True)
+        for folders in (None, "folder", [None], [1], [""], ["bad\nfolder"], [str(alias)], [str(regular)], [str(self.root / "missing")]):
+            with self.subTest(folders=folders), self.assertRaises(UserError):
+                store.save_repository_folders(folders)
+            self.assertEqual(settings.read_bytes(), original)
+
+    def test_corrupt_folder_settings_cannot_be_read_or_overwritten(self):
+        store = Store(self.root / "config", self.root / "state")
+        store.config_dir.mkdir()
+        settings = store.config_dir / "settings.json"
+        invalid = [
+            "{broken", "[]", '{"version": true, "repository_folders": []}',
+            '{"version": 2, "repository_folders": []}', '{"version": 1}',
+            '{"version": 1, "repository_folders": "folder"}',
+            '{"version": 1, "repository_folders": [null]}',
+            '{"version": 1, "repository_folders": ["relative"]}',
+            json.dumps({"version": 1, "repository_folders": [str(self.root / "bad\nfolder")]}),
+        ]
+        for value in invalid:
+            with self.subTest(value=value):
+                settings.write_text(value)
+                with self.assertRaisesRegex(UserError, "left unchanged"):
+                    store.repository_folders()
+                with self.assertRaisesRegex(UserError, "left unchanged"):
+                    store.save_repository_folders([str(self.root)])
+                self.assertEqual(settings.read_text(), value)
+        settings.write_bytes(b"\xff")
+        with self.assertRaisesRegex(UserError, "left unchanged"):
+            store.repository_folders()
+        self.assertEqual(settings.read_bytes(), b"\xff")
+        self.assertFalse(store.path.exists())
+
     def test_atomic_save_update_and_delete(self):
         repo = self.repo("project")
         store = Store(self.root / "config", self.root / "state")

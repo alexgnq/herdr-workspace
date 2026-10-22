@@ -5,7 +5,7 @@ Switch between Codex, Claude Code, Copilot and Pi, or run them side by side in t
 
 [Install](#install) · [Usage](#usage) · [Shortcuts and sidebar](#shortcuts-and-sidebar) · [How it works](#directory-access)
 
-![Create a workspace, select repositories and choose an agent in the terminal picker.](assets/demo.gif)
+![Save repository folders, create a workspace and choose an agent in the terminal picker.](assets/demo.gif)
 
 <sub>Recorded with temporary repos. Agent launches are simulated.</sub>
 
@@ -27,6 +27,9 @@ herdr plugin action invoke open --plugin herdr-workspaces
 
 Press `n` to create a workspace. Name it, select the repositories, choose an agent and review the
 checkouts before opening. The workspace stays saved for the next session.
+
+For a different checkout location, open **Repository folders** from the home screen once. The saved
+folders become the default search locations for all future workspaces on that machine.
 
 ### Update
 
@@ -55,20 +58,33 @@ Python's standard library is the only runtime dependency. There is no build step
 | `Enter` | Open a saved workspace. Choose an agent, then focus it if running or start it in the same space. |
 | `a` | Choose an agent and start another session in the workspace. |
 | `r` | Edit the workspace name or repositories. |
+| `f` | Set the default repository folders. |
 | `e` / `i` | Export a workspace / import a shared file. |
 | `d` | Delete a saved workspace after confirmation. |
 | `Esc` / `q` | Go back / close the picker. |
 
 In setup, use `Tab` or arrows to move between fields and `Enter` to edit or activate an action.
 In the repo picker, type to filter, use arrows to move, `Space` to select and `Enter` to finish.
-`Ctrl+A` adds a checkout folder. Paths and current branches distinguish different checkouts.
+`Ctrl+A` adds a single checkout. `Ctrl+F` opens Repository folders and refreshes the list when settings
+change. Paths and current branches distinguish different checkouts.
 
 Deleting a saved workspace keeps the repos, generated links and running agents. To close the running
 space separately, use Herdr's Close workspace action, or Ctrl+B then Shift+D with default keybindings.
 Closing a space also stops its terminals.
 
-The picker looks two folder levels under `~/code`, `~/Projects`, `~/projects` and `~/src`.
-Use **Add folder** for other locations. Git worktrees are supported.
+### Repository folders
+
+Choose **Repository folders** on the home screen or press `f` to add, change or remove search locations.
+Changes are saved automatically and apply to every workspace. This is a one-time preference;
+normal workspace setup uses the saved folders without asking again. Removing a search folder keeps
+its repositories and any saved workspace definitions.
+
+The picker searches two folder levels beneath each saved location. Before any folders are configured,
+it looks under `~/code`, `~/Projects`, `~/projects` and `~/src`, or the home folder if none exist.
+**Restore default folders** returns to those locations. Git worktrees are supported, and `Ctrl+A` can
+still add an individual checkout outside the search folders.
+
+### Agent sessions
 
 Each saved workspace keeps one Herdr space. Opening it focuses an existing agent of the chosen kind
 or starts a new one. The last chosen agent is preselected next time. Press `a` to start another session.
